@@ -1,0 +1,10 @@
+black
+flake8
+pytest
+pytest-cov
+mypy
+docformatter
+pydocstyle==6.1.1
+toml
+pre-commit==3.8.0
+pydocstyle==6.1.1

@@ -1,0 +1,58 @@
+name: build
+
+on: [push]
+
+env:
+  REPO_NAME: ${{ github.event.repository.name }}
+
+jobs:
+  pre-commit-and-test:
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Get branch name
+        id: branch-name
+        uses: tj-actions/branch-names@v7.0.7
+
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup python
+        uses: actions/setup-python@v4
+        with:
+          architecture: x64
+          python-version: 3.9
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run black
+        shell: bash
+        run: pre-commit run black --all-files
+
+      - name: Run flake8
+        shell: bash
+        run: pre-commit run flake8 --all-files
+
+      - name: Run docformatter
+        shell: bash
+        run: pre-commit run docformatter --all-files
+
+      - name: Run pydocstyle
+        shell: bash
+        run: pre-commit run pydocstyle --all-files
+
+      - name: Run mypy
+        shell: bash
+        run: pre-commit run mypy --all-files
+   
+      - name: Run pytest with code coverage
+        run: |
+          pytest --junitxml pytest.xml --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml --cov-branch | tee pytest-coverage.txt

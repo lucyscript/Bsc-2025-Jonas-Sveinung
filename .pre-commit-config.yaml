@@ -1,0 +1,55 @@
+fail_fast: true
+repos:
+  - repo: https://github.com/ambv/black
+    rev: 22.6.0
+    hooks:
+      - id: black
+        language_version: python3.9
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 5.0.4
+    hooks:
+      - id: flake8
+
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.5
+    hooks:
+      - id: docformatter
+        name: docformatter
+        language: python
+        types: [python]
+        description: "Formats docstrings to follow PEP 257."
+        entry: docformatter
+        args: 
+          - --in-place
+          - --wrap-summaries=80
+          - --wrap-descriptions=80
+
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.1.1
+    hooks:
+      - id: pydocstyle
+        args:
+          - --ignore=D101,D104,D105,D203,D213,D401,D406,D407,D413
+          - --ignore-decorators
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: mypy
+        language: python
+        types: [python]
+        exclude: ^(tests|data|docs)/
+        args:
+          - --no-strict-optional
+          - --ignore-missing-imports
+          - --no-incremental
+          - --disable-error-code=override
+
+      - id: pytest
+        name: run tests
+        entry: pytest tests -vv
+        language: system
+        always_run: true
+        pass_filenames: false
