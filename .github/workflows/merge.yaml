@@ -6,7 +6,7 @@ on:
 
 jobs:
   pre-commit-and-test:
-    name: "Pre-commit and Test Python 3.9"
+    name: "Pre-commit and Test Python 3.12"
     runs-on: ubuntu-latest
     if: always()
     timeout-minutes: 20
@@ -16,7 +16,7 @@ jobs:
       - name: Setup python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.9"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install Dependencies
@@ -24,7 +24,7 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest-github-actions-annotate-failures
-        
+
       - name: Install Graphviz
         uses: tlylt/install-graphviz@v1
 
@@ -47,7 +47,7 @@ jobs:
           fi
           echo "COVERAGE=${coverage%.*}%" >> $GITHUB_ENV
           echo "COLOR=$COLOR" >> $GITHUB_ENV
-      
+
       - name: Create Coverage Badge
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:

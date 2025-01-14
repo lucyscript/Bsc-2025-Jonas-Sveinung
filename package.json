@@ -1,0 +1,8 @@
+{
+  "devDependencies": {
+    "@jest/types": "^29.6.3",
+    "@types/jest": "^29.5.14",
+    "@types/next": "^8.0.7",
+    "@types/testing-library__react": "^10.0.1"
+  }
+}

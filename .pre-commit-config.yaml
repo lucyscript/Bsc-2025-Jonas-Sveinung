@@ -1,10 +1,10 @@
 fail_fast: true
 repos:
   - repo: https://github.com/ambv/black
-    rev: 22.6.0
+    rev: 23.12.1
     hooks:
       - id: black
-        language_version: python3.9
+        language_version: python3.12
 
   - repo: https://github.com/pycqa/flake8
     rev: 5.0.4
@@ -20,7 +20,7 @@ repos:
         types: [python]
         description: "Formats docstrings to follow PEP 257."
         entry: docformatter
-        args: 
+        args:
           - --in-place
           - --wrap-summaries=80
           - --wrap-descriptions=80
