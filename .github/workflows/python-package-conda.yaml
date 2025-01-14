@@ -24,7 +24,7 @@ jobs:
         uses: actions/setup-python@v4
         with:
           architecture: x64
-          python-version: 3.9
+          python-version: 3.12
           cache: "pip"
           cache-dependency-path: requirements.txt
 
@@ -52,7 +52,8 @@ jobs:
       - name: Run mypy
         shell: bash
         run: pre-commit run mypy --all-files
-   
+
       - name: Run pytest with code coverage
         run: |
           pytest --junitxml pytest.xml --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml --cov-branch | tee pytest-coverage.txt
+
