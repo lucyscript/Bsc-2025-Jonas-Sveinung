@@ -1,46 +1,56 @@
-"""Example of a main file."""
+"""FastAPI application for WhatsApp webhook integration and fact-checking.
 
-import argparse
-import logging
+This module sets up a FastAPI application that handles webhook verification and
+message processing for WhatsApp Cloud API integration.
+"""
 
-logging.basicConfig(
-    level=logging.WARNING,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+from fastapi import FastAPI
+import os
+from dotenv import load_dotenv
+
+# Load environment variables first
+load_dotenv()
+
+# Create FastAPI app
+app = FastAPI()
+
+# Get token from environment variables
+token = os.getenv("WEBHOOK_VERIFY_TOKEN")
+
+# Print for debugging
+print(f"Loaded token: {token}")
 
 
-def main(args: argparse.Namespace) -> None:
-    """Main function.
-
-    Args:
-        args: Arguments from command-line call.
-    """
-    logger.info("Starting main function.")
-    logger.debug(f"Arguments: {args}")
-
-
-def parse_args() -> argparse.Namespace:
-    """Parses arguments from command-line call.
+@app.get("/")
+async def root():
+    """Root endpoint for API health check.
 
     Returns:
-        Arguments from command-line call.
+        dict: A simple hello world message
     """
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-d",
-        "--debug",
-        action="store_true",
-        dest="debug",
-        help="Debugging mode",
-        default=False,
-    )
-    return parser.parse_args()
+    return {"message": "Hello World"}
 
 
-if __name__ == "__main__":
-    args = parse_args()
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
-    main(args)
+# Define GET and POST methods for WhatsApp API
+@app.get("/whatsapp")
+async def whatsapp_get():
+    """Handle GET requests for WhatsApp webhook verification.
+
+    This endpoint is used by WhatsApp to verify the webhook URL.
+
+    Returns:
+        dict: A simple response message
+    """
+    return {"message": "Hello World"}
+
+
+@app.post("/whatsapp")
+async def whatsapp_post():
+    """Handle POST requests from WhatsApp webhook.
+
+    This endpoint receives messages and events from WhatsApp Cloud API.
+
+    Returns:
+        dict: A simple response message
+    """
+    return {"message": "Hello World"}
