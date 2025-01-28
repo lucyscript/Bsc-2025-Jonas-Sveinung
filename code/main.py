@@ -4,7 +4,7 @@ This module sets up a FastAPI application that handles webhook verification and
 message processing for WhatsApp Cloud API integration.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 import os
 from dotenv import load_dotenv
 
@@ -15,10 +15,10 @@ load_dotenv()
 app = FastAPI()
 
 # Get token from environment variables
-token = os.getenv("WEBHOOK_VERIFY_TOKEN")
+verify_token = os.getenv("WEBHOOK_VERIFY_TOKEN")
 
 # Print for debugging
-print(f"Loaded token: {token}")
+print(f"Loaded token: {verify_token}")
 
 
 @app.get("/")
@@ -33,7 +33,7 @@ async def root():
 
 # Define GET and POST methods for WhatsApp API
 @app.get("/whatsapp")
-async def whatsapp_get():
+async def whatsapp_get(request: Request):
     """Handle GET requests for WhatsApp webhook verification.
 
     This endpoint is used by WhatsApp to verify the webhook URL.
@@ -41,7 +41,15 @@ async def whatsapp_get():
     Returns:
         dict: A simple response message
     """
-    return {"message": "Hello World"}
+    query_params = request.query_params
+    mode = query_params.get("hub.mode")
+    token = query_params.get("hub.verify_token")
+    challenge = query_params.get("hub.challenge")
+
+    if mode == "subscribe" and token == verify_token:
+        return challenge
+    else:
+        raise HTTPException(status_code=403, detail="Verification failed")
 
 
 @app.post("/whatsapp")
