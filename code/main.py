@@ -53,7 +53,7 @@ async def whatsapp_get(request: Request):
 
 
 @app.post("/whatsapp")
-async def whatsapp_post():
+async def whatsapp_post(request: Request):
     """Handle POST requests from WhatsApp webhook.
 
     This endpoint receives messages and events from WhatsApp Cloud API.
@@ -61,4 +61,10 @@ async def whatsapp_post():
     Returns:
         dict: A simple response message
     """
-    return {"message": "Hello World"}
+    # Get the JSON data from the request
+    webhook_data = await request.json()
+
+    # Print the full webhook data for debugging
+    print(webhook_data)
+
+    return {"message": "Webhook received"}
