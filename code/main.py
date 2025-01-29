@@ -35,12 +35,24 @@ async def root():
 # Define GET and POST methods for WhatsApp API
 @app.get("/whatsapp")
 async def whatsapp_get(request: Request):
-    """Handle GET requests for WhatsApp webhook verification.
+    """Handle WhatsApp webhook verification requests.
 
-    This endpoint is used by WhatsApp to verify the webhook URL.
+    This endpoint processes GET requests from WhatsApp Cloud API for webhook
+    verification. When setting up a webhook, WhatsApp sends a verification
+    request with a challenge token to confirm the endpoint's authenticity.
+
+    Args:
+        request (Request): FastAPI Request object containing query parameters:
+            - hub.mode: Should be "subscribe"
+            - hub.verify_token: Token to match against our verification token
+            - hub.challenge: Challenge string to return if verification succeeds
 
     Returns:
-        dict: A simple response message
+        PlainTextResponse: Challenge string if verification succeeds
+
+    Raises:
+        HTTPException: 403 error if verification fails due to token mismatch
+            or incorrect mode
     """
     query_params = request.query_params
     mode = query_params.get("hub.mode")
