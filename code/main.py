@@ -7,6 +7,7 @@ message processing for WhatsApp Cloud API integration.
 from fastapi import FastAPI, Request, HTTPException
 import os
 from dotenv import load_dotenv
+from fastapi.responses import PlainTextResponse
 
 # Load environment variables first
 load_dotenv()
@@ -47,7 +48,7 @@ async def whatsapp_get(request: Request):
     challenge = query_params.get("hub.challenge")
 
     if mode == "subscribe" and token == verify_token:
-        return challenge
+        return PlainTextResponse(content=challenge)
     else:
         raise HTTPException(status_code=403, detail="Verification failed")
 
