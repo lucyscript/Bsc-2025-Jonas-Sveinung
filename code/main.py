@@ -8,6 +8,17 @@ from fastapi import FastAPI, Request, HTTPException
 import os
 from dotenv import load_dotenv
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field
+
+
+class WhatsAppWebhook(BaseModel):
+    """Pydantic model for WhatsApp webhook data."""
+
+    object: str = Field(
+        ..., description="Should be 'whatsapp_business_account'"
+    )
+    entry: list = Field(..., description="List of webhook entries")
+
 
 # Load environment variables first
 load_dotenv()
@@ -15,11 +26,10 @@ load_dotenv()
 # Create FastAPI app
 app = FastAPI()
 
-# Get token from environment variables
-verify_token = os.getenv("WEBHOOK_VERIFY_TOKEN")
 
-# Print for debugging
-print(f"Loaded token: {verify_token}")
+def verify_token():
+    """Get the webhook verification token from environment variables."""
+    return os.getenv("WEBHOOK_VERIFY_TOKEN")
 
 
 @app.get("/")
@@ -59,25 +69,23 @@ async def whatsapp_get(request: Request):
     token = query_params.get("hub.verify_token")
     challenge = query_params.get("hub.challenge")
 
-    if mode == "subscribe" and token == verify_token:
+    if mode == "subscribe" and token == verify_token():
         return PlainTextResponse(content=challenge)
     else:
         raise HTTPException(status_code=403, detail="Verification failed")
 
 
 @app.post("/whatsapp")
-async def whatsapp_post(request: Request):
+async def whatsapp_post(webhook: WhatsAppWebhook):
     """Handle POST requests from WhatsApp webhook.
 
     This endpoint receives messages and events from WhatsApp Cloud API.
 
+    Args:
+        webhook (WhatsAppWebhook): Validated webhook data
+
     Returns:
-        dict: A simple response message
+        dict: A confirmation message
     """
-    # Get the JSON data from the request
-    webhook_data = await request.json()
-
-    # Print the full webhook data for debugging
-    print(webhook_data)
-
+    print(webhook)
     return {"message": "Webhook received"}
