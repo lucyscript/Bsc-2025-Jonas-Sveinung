@@ -121,47 +121,47 @@ jobs:
           hide-comment: false
           report-only-changed-files: true
 
-      - name: Get the Coverage
-        shell: bash
-        run: |
-          regex='<coverage.+line-rate="([0-9).[0-9]+)".+>'
-          line=$(grep -oP $regex coverage.xml)
-          [[ $line =~ $regex ]]
-          coverage=$( bc <<< ${BASH_REMATCH[1]}*100 )
-          if (( $(echo "$coverage > 90" |bc -l) )); then
-            COLOR=green
-          else
-            COLOR=red
-          fi
-          echo "COVERAGE=${coverage%.*}%" >> $GITHUB_ENV
-          echo "COLOR=$COLOR" >> $GITHUB_ENV
-
-      - name: Create Coverage Badge
-        uses: schneegans/dynamic-badges-action@v1.7.0
-        with:
-          auth: ${{ secrets.GIST_SECRET }}
-          gistID: ${{ secrets.GIST_ID }}
-          filename: coverage.${{ env.REPO_NAME }}.${{ github.event.number }}.json
-          label: coverage
-          message: ${{ env.COVERAGE }}
-          color: ${{ env.COLOR }}
-
-      - name: Find Comment
-        uses: peter-evans/find-comment@v2
-        id: fc
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          comment-author: "github-actions[bot]"
-          body-includes: Current Branch | Main Branch
-
-      - name: Create coverage comment
-        uses: peter-evans/create-or-update-comment@v2
-        with:
-          comment-id: ${{ steps.fc.outputs.comment-id }}
-          issue-number: ${{  github.event.pull_request.number }}
-          reactions: eyes
-          body: |
-            Current Branch | Main Branch |
-            | ------ | ------ |
-            ![Coverage Badge](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/${{ env.GIST_OWNER }}/${{ secrets.GIST_ID }}/raw/coverage.${{ env.REPO_NAME }}.${{ github.event.number }}.json) | ![Coverage Badge](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/${{ github.repository_owner }}/${{ secrets.GIST_ID }}/raw/coverage.${{ env.REPO_NAME }}.main.json) |
-          edit-mode: replace
+      # - name: Get the Coverage
+      #   shell: bash
+      #   run: |
+      #     regex='<coverage.+line-rate="([0-9).[0-9]+)".+>'
+      #     line=$(grep -oP $regex coverage.xml)
+      #     [[ $line =~ $regex ]]
+      #     coverage=$( bc <<< ${BASH_REMATCH[1]}*100 )
+      #     if (( $(echo "$coverage > 90" |bc -l) )); then
+      #       COLOR=green
+      #     else
+      #       COLOR=red
+      #     fi
+      #     echo "COVERAGE=${coverage%.*}%" >> $GITHUB_ENV
+      #     echo "COLOR=$COLOR" >> $GITHUB_ENV
+      #
+      # - name: Create Coverage Badge
+      #   uses: schneegans/dynamic-badges-action@v1.7.0
+      #   with:
+      #     auth: ${{ secrets.GIST_SECRET }}
+      #     gistID: ${{ secrets.GIST_ID }}
+      #     filename: coverage.${{ env.REPO_NAME }}.${{ github.event.number }}.json
+      #     label: coverage
+      #     message: ${{ env.COVERAGE }}
+      #     color: ${{ env.COLOR }}
+      #
+      # - name: Find Comment
+      #   uses: peter-evans/find-comment@v2
+      #   id: fc
+      #   with:
+      #     issue-number: ${{ github.event.pull_request.number }}
+      #     comment-author: "github-actions[bot]"
+      #     body-includes: Current Branch | Main Branch
+      #
+      # - name: Create coverage comment
+      #   uses: peter-evans/create-or-update-comment@v2
+      #   with:
+      #     comment-id: ${{ steps.fc.outputs.comment-id }}
+      #     issue-number: ${{  github.event.pull_request.number }}
+      #     reactions: eyes
+      #     body: |
+      #       Current Branch | Main Branch |
+      #       | ------ | ------ |
+      #       ![Coverage Badge](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/${{ env.GIST_OWNER }}/${{ secrets.GIST_ID }}/raw/coverage.${{ env.REPO_NAME }}.${{ github.event.number }}.json) | ![Coverage Badge](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/${{ github.repository_owner }}/${{ secrets.GIST_ID }}/raw/coverage.${{ env.REPO_NAME }}.main.json) |
+      #     edit-mode: replace
