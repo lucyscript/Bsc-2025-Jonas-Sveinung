@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
+from random import random
 
 
 class WhatsAppWebhook(BaseModel):
@@ -18,6 +19,20 @@ class WhatsAppWebhook(BaseModel):
         ..., description="Should be 'whatsapp_business_account'"
     )
     entry: list = Field(..., description="List of webhook entries")
+
+
+class FactCheckRequest(BaseModel):
+    """Pydantic model for fact-check request."""
+
+    text: str = Field(..., description="Text to fact check")
+
+
+class FactCheckResponse(BaseModel):
+    """Pydantic model for fact-check response."""
+
+    text: str
+    is_factual: bool
+    confidence: float
 
 
 # Load environment variables first
@@ -89,3 +104,23 @@ async def whatsapp_post(webhook: WhatsAppWebhook):
     """
     print(webhook)
     return {"message": "Webhook received"}
+
+
+@app.post("/fact-check", response_model=FactCheckResponse)
+async def fact_check(request: FactCheckRequest):
+    """Mock fact-checking endpoint randomly returns if a statement is factual.
+
+    Args:
+        request (FactCheckRequest): The text to fact check
+
+    Returns:
+        FactCheckResponse: Contains the original text, random true/false result,
+            and a mock confidence score
+    """
+    # Generate random boolean (True/False) and confidence score
+    is_factual = random() > 0.5
+    confidence = random()
+
+    return FactCheckResponse(
+        text=request.text, is_factual=is_factual, confidence=confidence
+    )
