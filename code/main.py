@@ -122,45 +122,51 @@ async def whatsapp_post(webhook: WhatsAppWebhook):
     print(f"Entry: {webhook.entry}")
 
     try:
-        # Extract message from the webhook data
+        # Extract base webhook data
         entry = webhook.entry[0]
         changes = entry.get("changes", [])[0]
         value = changes.get("value", {})
-        messages = value.get("messages", [])[0]
 
-        # Get the text message
-        if messages and messages.get("type") == "text":
-            message_text = messages["text"]["body"]
+        # If this is a status update, handle it differently
+        if "statuses" in value:
+            status = value.get("statuses", [])[0]
+            print(f"Status update received - Status: {status.get('status')}")
+            if status.get("errors"):
+                print(f"Status errors: {status['errors']}")
+            return {"message": "Status update processed"}
 
-            # Get sender's phone number and phone number ID for later use
-            sender_phone = messages["from"]
-            phone_number_id = value["metadata"]["phone_number_id"]
+        # Handle normal messages
+        if "messages" in value:
+            messages = value.get("messages", [])[0]
+            if messages and messages.get("type") == "text":
+                message_text = messages["text"]["body"]
+                sender_phone = messages["from"]
+                phone_number_id = value["metadata"]["phone_number_id"]
 
-            # Call the fact-check endpoint
-            fact_check_request = FactCheckRequest(text=message_text)
-            fact_check_result = await fact_check(fact_check_request)
+                fact_check_request = FactCheckRequest(text=message_text)
+                fact_check_result = await fact_check(fact_check_request)
 
-            print(f"Received message: {message_text}")
-            print(f"From: {sender_phone}")
-            print(f"Phone ID: {phone_number_id}")
+                print(f"Received message: {message_text}")
+                print(f"From: {sender_phone}")
+                print(f"Phone ID: {phone_number_id}")
 
-            response_message = (
-                f"Fact check results for: '{message_text}'\n"
-                f"Factual: {fact_check_result.is_factual}\n"
-                f"Confidence: {fact_check_result.confidence:.2%}"
-            )
+                response_message = (
+                    f"Fact check results for: '{message_text}'\n"
+                    f"Factual: {fact_check_result.is_factual}\n"
+                    f"Confidence: {fact_check_result.confidence:.2%}"
+                )
 
-            send_result = await send_whatsapp_message(
-                phone_number_id=phone_number_id,
-                to=sender_phone,
-                message_text=response_message,
-            )
+                send_result = await send_whatsapp_message(
+                    phone_number_id=phone_number_id,
+                    to=sender_phone,
+                    message_text=response_message,
+                )
 
-            return {
-                "message": "Webhook processed",
-                "fact_check_result": fact_check_result,
-                "send_result": send_result,
-            }
+                return {
+                    "message": "Webhook processed",
+                    "fact_check_result": fact_check_result,
+                    "send_result": send_result,
+                }
 
     except Exception as e:
         print(f"Error processing webhook: {str(e)}")
