@@ -201,6 +201,13 @@ async def send_whatsapp_message(
     """
     url = f"https://graph.facebook.com/v22.0/{phone_number_id}/messages"
 
+    token = get_whatsapp_token()
+    if token is None:
+        print("WARNING: WhatsApp token is not set!")
+        return {"error": "WhatsApp token is not configured"}
+
+    print(f"WhatsApp token found: {'Yes' if token else 'No'}")
+
     headers = {
         "Authorization": f"Bearer {get_whatsapp_token()}",
         "Content-Type": "application/json",
