@@ -98,11 +98,45 @@ async def whatsapp_post(webhook: WhatsAppWebhook):
 
     Args:
         webhook (WhatsAppWebhook): Validated webhook data
-
     Returns:
         dict: A confirmation message
     """
-    print(webhook)
+    try:
+        # Extract message from the webhook data
+        entry = webhook.entry[0]
+        changes = entry.get("changes", [])[0]
+        value = changes.get("value", {})
+        messages = value.get("messages", [])[0]
+
+        # Get the text message
+        if messages and messages.get("type") == "text":
+            message_text = messages["text"]["body"]
+
+            # Get sender's phone number and phone number ID for later use
+            sender_phone = messages["from"]
+            phone_number_id = value["metadata"]["phone_number_id"]
+
+            # Call the fact-check endpoint
+            fact_check_request = FactCheckRequest(text=message_text)
+            fact_check_result = await fact_check(fact_check_request)
+
+            print(f"Received message: {message_text}")
+            print(f"From: {sender_phone}")
+            print(f"Phone ID: {phone_number_id}")
+
+            # We can implement the sending of a response message here
+
+            return {
+                "message": "Webhook processed",
+                "fact_check_result": fact_check_result,
+                "sender": sender_phone,
+                "phone_number_id": phone_number_id,
+            }
+
+    except Exception as e:
+        print(f"Error processing webhook: {str(e)}")
+        return {"message": f"Error processing webhook: {str(e)}"}
+
     return {"message": "Webhook received"}
 
 
