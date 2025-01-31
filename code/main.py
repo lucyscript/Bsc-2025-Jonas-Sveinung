@@ -149,6 +149,7 @@ async def whatsapp_post(webhook: WhatsAppWebhook):
                 print(f"Received message: {message_text}")
                 print(f"From: {sender_phone}")
                 print(f"Phone ID: {phone_number_id}")
+                print(f"Fact check result: {fact_check_result}")
 
                 response_message = (
                     f"Fact check results for: '{message_text}'\n"
