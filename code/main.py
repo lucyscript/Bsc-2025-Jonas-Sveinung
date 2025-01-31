@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from random import random
+import httpx
 
 
 class WhatsAppWebhook(BaseModel):
@@ -35,6 +36,16 @@ class FactCheckResponse(BaseModel):
     confidence: float
 
 
+class WhatsAppMessageRequest(BaseModel):
+    """Pydantic model for sending WhatsApp messages."""
+
+    messaging_product: str = "whatsapp"
+    recipient_type: str = "individual"
+    to: str
+    type: str = "text"
+    text: dict
+
+
 # Load environment variables first
 load_dotenv()
 
@@ -45,6 +56,11 @@ app = FastAPI()
 def verify_token():
     """Get the webhook verification token from environment variables."""
     return os.getenv("WEBHOOK_VERIFY_TOKEN")
+
+
+def get_whatsapp_token():
+    """Get the WhatsApp API token from environment variables."""
+    return os.getenv("WHATSAPP_TOKEN")
 
 
 @app.get("/")
@@ -124,13 +140,22 @@ async def whatsapp_post(webhook: WhatsAppWebhook):
             print(f"From: {sender_phone}")
             print(f"Phone ID: {phone_number_id}")
 
-            # We can implement the sending of a response message here
+            response_message = (
+                f"Fact check results for: '{message_text}'\n"
+                f"Factual: {fact_check_result.is_factual}\n"
+                f"Confidence: {fact_check_result.confidence:.2%}"
+            )
+
+            send_result = await send_whatsapp_message(
+                phone_number_id=phone_number_id,
+                to=sender_phone,
+                message_text=response_message,
+            )
 
             return {
                 "message": "Webhook processed",
                 "fact_check_result": fact_check_result,
-                "sender": sender_phone,
-                "phone_number_id": phone_number_id,
+                "send_result": send_result,
             }
 
     except Exception as e:
@@ -158,3 +183,37 @@ async def fact_check(request: FactCheckRequest):
     return FactCheckResponse(
         text=request.text, is_factual=is_factual, confidence=confidence
     )
+
+
+@app.post("/whatsapp-send")
+async def send_whatsapp_message(
+    phone_number_id: str, to: str, message_text: str
+):
+    """Send a WhatsApp message using the Cloud API.
+
+    Args:
+        phone_number_id: The ID of the phone number sending the message
+        to: The recipient's phone number
+        message_text: The text message to send
+
+    Returns:
+        dict: The API response
+    """
+    url = f"https://graph.facebook.com/v22.0/{phone_number_id}/messages"
+
+    headers = {
+        "Authorization": f"Bearer {get_whatsapp_token()}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "text",
+        "text": {"body": message_text},
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload, headers=headers)
+        return response.json()
