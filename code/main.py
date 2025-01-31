@@ -117,6 +117,10 @@ async def whatsapp_post(webhook: WhatsAppWebhook):
     Returns:
         dict: A confirmation message
     """
+    print("Received webhook with data:")
+    print(f"Object: {webhook.object}")
+    print(f"Entry: {webhook.entry}")
+
     try:
         # Extract message from the webhook data
         entry = webhook.entry[0]
@@ -160,6 +164,7 @@ async def whatsapp_post(webhook: WhatsAppWebhook):
 
     except Exception as e:
         print(f"Error processing webhook: {str(e)}")
+        print(f"Webhook data: {webhook}")
         return {"message": f"Error processing webhook: {str(e)}"}
 
     return {"message": "Webhook received"}
