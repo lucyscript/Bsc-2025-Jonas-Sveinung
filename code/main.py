@@ -4,9 +4,10 @@ This module sets up a FastAPI application that handles webhook verification and
 message processing for WhatsApp Cloud API integration.
 """
 
-from fastapi import FastAPI, Request, HTTPException
 import os
+
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
