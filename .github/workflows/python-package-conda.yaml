@@ -39,7 +39,6 @@ jobs:
 
       - name: Run docformatter
         shell: bash
-        continue-on-error: true
         run: pre-commit run docformatter --all-files
 
       - name: Run ruff
@@ -52,5 +51,8 @@ jobs:
 
       - name: Run pytest with code coverage
         run: |
-          pytest --junitxml pytest.xml --cov=. --cov-report=term-missing --cov-report=xml:coverage.xml --cov-branch | tee pytest-coverage.txt
-
+          pytest --junitxml pytest.xml \
+           --cov=. \
+           --cov-report=term-missing \
+           --cov-report=xml:coverage.xml \
+           --cov-branch | tee pytest-coverage.txt
