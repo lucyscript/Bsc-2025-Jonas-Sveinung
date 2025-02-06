@@ -37,17 +37,13 @@ jobs:
         shell: bash
         run: pre-commit run black --all-files
 
-      - name: Run flake8
-        shell: bash
-        run: pre-commit run flake8 --all-files
-
       - name: Run docformatter
         shell: bash
         run: pre-commit run docformatter --all-files
 
-      - name: Run pydocstyle
+      - name: Run ruff
         shell: bash
-        run: pre-commit run pydocstyle --all-files
+        run: pre-commit run ruff --all-files
 
       - name: Run mypy
         shell: bash
