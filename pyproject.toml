@@ -6,7 +6,6 @@ target-version = ['py312']
 line-length = 80
 target-version = "py312"
 
-# Lint rules
 select = ["E", "F", "I", "D"]
 ignore = [
     "D101",  # Missing docstring in public class
