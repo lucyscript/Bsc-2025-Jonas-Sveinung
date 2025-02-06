@@ -87,23 +87,24 @@ jobs:
           path: pytest-coverage.txt
 
   publish-test-results:
-    name: "Publish Unit Tests Results"
+    name: "Publish Unit Test Results"
     needs: pre-commit-and-test
     runs-on: ubuntu-latest
     if: always()
     timeout-minutes: 20
 
     steps:
-      - name: Download Artifacts
+      - name: Download Pytest XML Results
         uses: actions/download-artifact@v4
         with:
-          name: unit-test-py312
-          path: unit-test-py312
+          name: unit-test-xml
+          path: unit-test-xml
 
-      - name: Download coverage report
+      - name: Download Pytest Coverage Results
         uses: actions/download-artifact@v4
         with:
-          name: coverage-results
+          name: unit-test-coverage
+          path: unit-test-coverage
 
       - name: Pytest coverage comment in pull-request
         uses: MishaKav/pytest-coverage-comment@main
