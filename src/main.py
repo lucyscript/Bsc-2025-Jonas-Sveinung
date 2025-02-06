@@ -5,9 +5,9 @@ message processing for WhatsApp Cloud API integration.
 """
 
 from fastapi import FastAPI
-from src.whatsapp.routers import router as whatsapp_router
-from src.fact_checker.routers import router as fact_checker_router
 
+from src.fact_checker.routers import router as fact_checker_router
+from src.whatsapp.routers import router as whatsapp_router
 
 app = FastAPI(
     title="WhatsApp Fact-Checking API",

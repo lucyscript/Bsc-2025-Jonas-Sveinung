@@ -1,3 +1,5 @@
+"""Test."""
+
 from fastapi import APIRouter
 
 router = APIRouter()
@@ -5,8 +7,7 @@ router = APIRouter()
 
 @router.post("/check")
 async def fact_check(message: dict):
-    """Dummy endpoint to simulate fact-checking with a payload resembling the
-    Factiverse API.
+    """Dummy endpoint simulate fact-checking.
 
     Expected input JSON:
     {

@@ -1,7 +1,7 @@
 """Router for handling WhatsApp Cloud API webhook endpoints."""
 
-from fastapi import APIRouter, Request, HTTPException
 import httpx
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter()
 
