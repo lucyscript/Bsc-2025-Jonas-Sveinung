@@ -29,7 +29,7 @@ def test_whatsapp_get_success(monkeypatch):
     }
 
     # Make request with query parameters
-    response = client.get("/whatsapp", params=params)
+    response = client.get("/webhook", params=params)
 
     # Verify response
     assert response.status_code == 200
@@ -52,7 +52,7 @@ def test_whatsapp_get_wrong_token(monkeypatch):
     }
 
     # Make request with query parameters
-    response = client.get("/whatsapp", params=params)
+    response = client.get("/webhook", params=params)
 
     # Verify failure response
     assert response.status_code == 403
@@ -73,7 +73,7 @@ def test_whatsapp_get_wrong_mode(monkeypatch):
     }
 
     # Make request with query parameters
-    response = client.get("/whatsapp", params=params)
+    response = client.get("/webhook", params=params)
 
     # Verify failure response
     assert response.status_code == 403
@@ -83,7 +83,7 @@ def test_whatsapp_get_wrong_mode(monkeypatch):
 def test_whatsapp_get_missing_params():
     """Test webhook verification fails with missing parameters."""
     # Make request with no parameters
-    response = client.get("/whatsapp")
+    response = client.get("/webhook")
 
     # Verify failure response
     assert response.status_code == 403
@@ -110,7 +110,7 @@ def test_whatsapp_post_success():
         ],
     }
 
-    response = client.post("/whatsapp", json=webhook_data)
+    response = client.post("/webhook", json=webhook_data)
     assert response.status_code == 200
     assert response.json() == {"message": "Webhook received"}
 
@@ -119,7 +119,7 @@ def test_whatsapp_post_missing_object():
     """Test POST fails when 'object' field is missing."""
     webhook_data = {"entry": []}  # Missing 'object' field
 
-    response = client.post("/whatsapp", json=webhook_data)
+    response = client.post("/webhook", json=webhook_data)
     assert response.status_code == 422  # Pydantic validation error
     assert "object" in response.text
 
@@ -130,7 +130,7 @@ def test_whatsapp_post_missing_entry():
         "object": "whatsapp_business_account"  # Missing 'entry' field
     }
 
-    response = client.post("/whatsapp", json=webhook_data)
+    response = client.post("/webhook", json=webhook_data)
     assert response.status_code == 422
     assert "entry" in response.text
 
@@ -139,7 +139,7 @@ def test_whatsapp_post_invalid_json():
     """Test POST fails with invalid JSON."""
     # Send invalid JSON as bytes with proper content-type header
     response = client.post(
-        "/whatsapp",
+        "/webhook",
         headers={"Content-Type": "application/json"},
         content=b"not a json",
     )
@@ -153,5 +153,5 @@ def test_whatsapp_post_wrong_types():
         "entry": "not a list",  # Should be list
     }
 
-    response = client.post("/whatsapp", json=webhook_data)
+    response = client.post("/webhook", json=webhook_data)
     assert response.status_code == 422

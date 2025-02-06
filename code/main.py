@@ -44,7 +44,7 @@ async def root():
 
 
 # Define GET and POST methods for WhatsApp API
-@app.get("/whatsapp")
+@app.get("/webhook")
 async def whatsapp_get(request: Request):
     """Handle WhatsApp webhook verification requests.
 
@@ -76,7 +76,7 @@ async def whatsapp_get(request: Request):
         raise HTTPException(status_code=403, detail="Verification failed")
 
 
-@app.post("/whatsapp")
+@app.post("/webhook")
 async def whatsapp_post(webhook: WhatsAppWebhook):
     """Handle POST requests from WhatsApp webhook.
 
