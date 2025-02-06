@@ -8,6 +8,9 @@ client = TestClient(app)
 
 
 def test_read_main():
+    """
+    Test the main endpoint of the API.
+    """
     response = client.get("/")
     assert response.status_code == 200
     assert response.json() == {"message": "Hello World"}
