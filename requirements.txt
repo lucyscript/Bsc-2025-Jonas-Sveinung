@@ -1,11 +1,10 @@
 black
-flake8
+ruff
 pytest
 pytest-cov
 mypy
 docformatter
 toml
 pre-commit==3.8.0
-pydocstyle==6.1.1
 fastapi[standard]
 uvicorn

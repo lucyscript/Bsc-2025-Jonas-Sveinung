@@ -1,3 +1,26 @@
 [tool.black]
 line-length = 80
 target-version = ['py312']
+
+[tool.ruff]
+line-length = 80
+target-version = "py312"
+
+# Lint rules
+select = ["E", "F", "I", "D"]
+ignore = [
+    "D101",  # Missing docstring in public class
+    "D104",  # Missing docstring in public package
+    "D105",  # Missing docstring in magic method
+    "D203",  # 1 blank line required before class docstring
+    "D213",  # Multi-line docstring summary should start at the second line
+    "D401",  # First line of docstring should be in imperative mood
+    "D406",  # Section name should end with a newline
+    "D407",  # Missing dashed underline after section
+    "D413",  # Missing blank line after last section
+    "E203",  # Whitespace before ':'
+]
+exclude = [".git", "__pycache__"]
+
+[tool.ruff.mccabe]
+max-complexity = 10
