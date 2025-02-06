@@ -72,18 +72,18 @@ jobs:
           path: coverage.xml
         if: ${{ always() }}
 
-      - name: Upload Unit Test Results
+      - name: Upload Pytest XML Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unit-test-py312
+          name: unit-test-xml
           path: pytest.xml
 
-      - name: Upload Unit Test Results
+      - name: Upload Pytest Coverage Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unit-test-py312
+          name: unit-test-coverage
           path: pytest-coverage.txt
 
   publish-test-results:
