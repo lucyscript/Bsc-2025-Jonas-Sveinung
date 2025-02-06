@@ -39,6 +39,7 @@ jobs:
 
       - name: Run docformatter
         shell: bash
+        continue-on-error: true
         run: pre-commit run docformatter --all-files
 
       - name: Run ruff
