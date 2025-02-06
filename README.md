@@ -12,3 +12,13 @@ Using `pre-commit` hooks, `flake8`, `black`, `mypy`, `docformatter`, `pydocstyle
 Similarly, Github actions are used to run `flake8`, `black`, `mypy`, `docformatter`, `pydocstyle` and `pytest` on every push and pull request and merge to main. The `pytest` also runs coverage. GitHub actions are explained in detail [here](https://github.com/iai-group/guidelines/blob/main/github/Actions.md).
 
 For GitHub actions/CI Setup see [here](docs/CI_setup.md)
+
+# Mock Testing
+
+curl -X POST "http://127.0.0.1:8000/whatsapp/webhook" \
+ -H "Content-Type: application/json" \
+ -d '{
+"text": "Can you check the facts about the new policy?",
+"language": "en",
+"context": "Policy update announcement"
+}'

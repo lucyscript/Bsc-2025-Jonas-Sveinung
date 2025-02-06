@@ -1,57 +1,54 @@
 """Router for handling WhatsApp Cloud API webhook endpoints."""
 
-from fastapi import APIRouter, Request, HTTPException, Query
-import logging
+from fastapi import APIRouter, Request, HTTPException
+import httpx
 
-router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
+router = APIRouter()
 
-VERIFY_TOKEN = "your_verify_token_here"
+VERIFY_TOKEN = "your_verify_token_here"  # Replace with your own token
 
 
-@router.get("")
+@router.get("/webhook")
 async def verify_webhook(
-    hub_mode: str = Query(..., alias="hub.mode"),
-    hub_challenge: str = Query(..., alias="hub.challenge"),
-    hub_verify_token: str = Query(..., alias="hub.verify_token"),
+    hub_mode: str, hub_verify_token: str, hub_challenge: str
 ):
-    """Verification endpoint for the WhatsApp Cloud API webhook.
+    """Mimic the WhatsApp webhook verification.
 
-    WhatsApp sends GET request with the following query parameters:
-      - hub.mode
-      - hub.verify_token
-      - hub.challenge
-
-    Otherwise, a 403 status is returned.
+    WhatsApp sends hub.verify_token and hub.challenge in the query parameters.
     """
-    if hub_mode != "subscribe":
-        raise HTTPException(
-            status_code=403, detail="Invalid hub mode. Expected 'subscribe'."
-        )
     if hub_verify_token != VERIFY_TOKEN:
         raise HTTPException(
-            status_code=403, detail="Verification token mismatch."
+            status_code=403, detail="Verification token mismatch"
         )
     return int(hub_challenge)
 
 
-@router.post("")
-async def receive_webhook(request: Request):
-    """Receiver endpoint for WhatsApp Cloud API webhook events.
+@router.post("/webhook")
+async def receive_message(request: Request):
+    """Handle incoming messages from WhatsApp.
 
-    This endpoint gets a POST request containing the webhook event payload,
-    which you can process accordingly
+    This stub extracts a text message (and optionally language/context) from the
+    payload, calls the fact-checker endpoint with a properly structured payload,
+    and returns the result.
     """
-    try:
-        payload = await request.json()
-    except Exception as e:
-        logging.error(f"Error parsing JSON payload: {e}")
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    payload = await request.json()
+    text = payload.get("text", "")
+    if not text:
+        raise HTTPException(status_code=400, detail="Missing 'text' in payload")
 
-    # Log the received payload for debugging.
-    logging.info(f"Received WhatsApp webhook payload: {payload}")
+    # Prepare a payload for the Factiverse (fact-checker) endpoint
+    fact_payload = {
+        "text": text,
+        "language": payload.get("language", "en"),  # Default language
+        "context": payload.get("context", ""),  # Optional additional context
+    }
 
-    # Process the payload (e.g., handle incoming messages, status updates, etc.)
-    # [Your processing logic goes here.]
+    # Call the mock fact-checker endpoint
+    async with httpx.AsyncClient() as client:
+        fact_response = await client.post(
+            "http://127.0.0.1:8000/fact-checker/check", json=fact_payload
+        )
+        fact_response.raise_for_status()
+        fact_result = fact_response.json()
 
-    # Acknowledge receipt of the webhook event.
-    return {"status": "success"}
+    return {"status": "processed", "fact_check_result": fact_result}
