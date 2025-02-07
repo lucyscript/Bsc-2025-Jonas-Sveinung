@@ -5,23 +5,28 @@ message processing for WhatsApp Cloud API integration.
 """
 
 from fastapi import FastAPI
+import logging
+import sys
 
-from src.fact_checker.routers import router as fact_checker_router
-from src.whatsapp.routers import router as whatsapp_router
+from whatsapp.routers import router as whatsapp_router
 
 app = FastAPI(
     title="WhatsApp Fact-Checking API",
-    description="A mock implementation for WhatsApp and Factiverse integration",
+    description="Implementation for WhatsApp and Factiverse integration",
     version="0.1.0",
 )
 
 # Mount the WhatsApp routes
-app.include_router(whatsapp_router, prefix="/whatsapp", tags=["WhatsApp"])
+app.include_router(whatsapp_router, tags=["WhatsApp"])
 
-# Mount the Fact-Checker routes
-app.include_router(
-    fact_checker_router, prefix="/fact-checker", tags=["Fact Checker"]
+logging.basicConfig(
+    level=logging.DEBUG,  # Adjust level as needed (e.g., DEBUG, INFO)
+    handlers=[logging.StreamHandler(sys.stdout)],
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+logger = logging.getLogger(__name__)
+logger.debug("Debug logging is now configured to stdout")
 
 
 @app.get("/")
