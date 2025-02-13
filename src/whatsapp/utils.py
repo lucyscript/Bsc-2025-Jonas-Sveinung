@@ -19,7 +19,7 @@ async def send_whatsapp_message(phone_number: str, message: str, reply_to: str):
         logger.warning(
             f"Message truncated from {len(message)} to {MAX_WHATSAPP_LENGTH} "
         )
-        message = message[: MAX_WHATSAPP_LENGTH - 4] + "..."
+        message = message[: MAX_WHATSAPP_LENGTH - 3] + "..."
 
     url = f"https://graph.facebook.com/v22.0/{PHONE_NUMBER_ID}/messages"
 
