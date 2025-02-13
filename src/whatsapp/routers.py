@@ -9,6 +9,7 @@ from fastapi.responses import PlainTextResponse
 from src.fact_checker.utils import (
     fact_check,
     format_human_readable_result,
+    generate,
 )
 from src.whatsapp.utils import send_whatsapp_message
 
@@ -76,8 +77,10 @@ async def receive_message(request: Request):
                     continue
 
                 # Fact-check and respond
-                fact_response = await fact_check(message_text)
+                generate_text = await generate(message_text)
+                fact_response = await fact_check(message_text, generate_text)
                 response_text = format_human_readable_result(fact_response)
+                print(f"This is the generated text: {generate_text}")
 
                 await send_whatsapp_message(
                     phone_number=phone_number,

@@ -17,6 +17,7 @@ if not FACTIVERSE_API_TOKEN:
     raise ValueError("FACTIVERSE_API_TOKEN not found in .env file")
 
 API_BASE_URL = os.getenv("FACTIVERSE_API_URL", "https://dev.factiverse.ai/v1")
+GENERATE_PROMPT = os.getenv("GENERATE_PROMPT")
 REQUEST_TIMEOUT = 30  # seconds
 
 
@@ -41,13 +42,53 @@ class FactCheckResult(BaseModel):
         return self.confidence * 100
 
 
+async def generate(
+    text: str,
+):
+    """Generate additional context for a given claim using Factiverse API."""
+    payload = {
+        "logging": False,
+        "lang": "",
+        "text": text,
+        "prompt": GENERATE_PROMPT,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {FACTIVERSE_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            response = await client.post(
+                f"{API_BASE_URL}/generate",
+                content=json.dumps(payload),
+                headers=headers,
+            )
+            response.raise_for_status()
+            json_response = response.json()
+            return json_response["full_output"]
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Fact check service error: {e.response.text}",
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Service temporarily unavailable: {str(e)}"
+        )
+
+
 async def fact_check(
+    claim: str,
     text: str,
     collection: str = "test",
 ) -> FactCheckResult:
     """Check factual accuracy of a text using Factiverse API.
 
     Args:
+        claim: Claim to fact check
         text: Text content to fact check
         lang: Language of the content
         domains: Specific domains to search (defaults to all domains)
@@ -65,7 +106,7 @@ async def fact_check(
         "lang": "",
         "collection": collection,
         "text": text,
-        "claims": [text],
+        "claims": [claim],
         "url": "",
         "domainsToSearch": [],
     }
