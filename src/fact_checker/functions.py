@@ -2,13 +2,11 @@
 
 import json
 import os
-from enum import Enum
-from typing import Optional, Sequence
 
 import httpx
 from dotenv import load_dotenv
 from fastapi import HTTPException
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
@@ -20,22 +18,6 @@ if not FACTIVERSE_API_TOKEN:
 
 API_BASE_URL = os.getenv("FACTIVERSE_API_URL", "https://dev.factiverse.ai/v1")
 REQUEST_TIMEOUT = 30  # seconds
-
-
-class LanguageCode(str, Enum):
-    """Supported ISO-639-1 language codes for fact-checking."""
-
-    EN = "en"
-    # Add more languages as needed
-
-
-class SearchDomain(str, Enum):
-    """Available domains for fact-checking searches."""
-
-    NEWS = "news"
-    ENCYCLOPEDIA = "encyclopedia"
-    RESEARCH = "research"
-    SOCIAL_MEDIA = "social_media"
 
 
 class FactCheckResult(BaseModel):
@@ -61,9 +43,6 @@ class FactCheckResult(BaseModel):
 
 async def fact_check(
     text: str,
-    lang: LanguageCode = LanguageCode.EN,
-    domains: Sequence[SearchDomain] | None = None,
-    url: Optional[HttpUrl] = None,
     collection: str = "test",
 ) -> FactCheckResult:
     """Check factual accuracy of a text using Factiverse API.
@@ -81,17 +60,14 @@ async def fact_check(
     Raises:
         HTTPException: When API call fails or service is unavailable
     """
-    if domains is None:
-        domains = list(SearchDomain)  # Use all available domains
-
     payload = {
         "logging": False,
-        "lang": lang,
+        "lang": "",
         "collection": collection,
         "text": text,
         "claims": [text],
-        "url": str(url) if url else "",
-        "domainsToSearch": [domain.value for domain in domains],
+        "url": "",
+        "domainsToSearch": [],
     }
 
     headers = {
