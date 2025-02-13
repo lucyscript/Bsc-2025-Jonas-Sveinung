@@ -6,10 +6,10 @@ import os
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
-from src.fact_checker.functions import (
+from src.fact_checker.utils import (
     fact_check,
     format_human_readable_result,
-)  # Import fact-checking functions
+)
 from src.whatsapp.utils import send_whatsapp_message
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
