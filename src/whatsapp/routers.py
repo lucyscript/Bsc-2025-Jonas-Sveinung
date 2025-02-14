@@ -68,39 +68,60 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                 try:
                     message = messages[0]
                     contact = contacts[0]
-                    message_text = message.get("text", {}).get("body", "")
+                    message_type = message.get("type")
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
 
                     if phone_number not in message_context:
                         message_context[phone_number] = []
-                    message_context[phone_number].append(message_text)
-                    print(f"Message context: {message_context[phone_number]}")
 
-                    # Retrieve context and format input for generate endpoint
-                    context_string = message_context[phone_number][
-                        :-1
-                    ]  # Exclude the current message
-                    context = "\n".join(context_string)
-                    combined_text = "Prev:\n{}\nCurr:\n{}".format(
-                        context, message_text
-                    )
+                    if message_type == "text":
+                        message_text = message.get("text", {}).get("body", "")
+                        message_context[phone_number].append(message_text)
+                        print(
+                            f"Message context: {message_context[phone_number]}"
+                        )
+
+                        # Retrieve context and format input for generate
+                        context_string = "\n".join(
+                            message_context[phone_number][:-1]
+                        )
+                        combined_text = "Prev:\n{}\nCurr:\n{}".format(
+                            context_string, message_text
+                        )
+
+                        background_tasks.add_task(
+                            process_message,
+                            phone_number,
+                            message_text,
+                            message_id,
+                            combined_text,
+                        )
+
+                    elif message_type == "reaction":
+                        # Handle reactions
+                        reaction = message.get("reaction")
+                        emoji = reaction.get("emoji")
+                        id_reacted_to = reaction.get("message_id")
+
+                        message_context[phone_number].append(
+                            f"Reaction: {emoji} on message {id_reacted_to}"
+                        )
+                        print(
+                            f"Reaction context: {message_context[phone_number]}"
+                        )
+
+                    else:
+                        logger.debug(
+                            f"Unsupported message type: {message_type}"
+                        )
+                        message_context[phone_number].append(
+                            f"Unsupported message type: {message_type}"
+                        )
 
                 except (KeyError, IndexError) as e:
                     logger.warning(f"Missing message data: {str(e)}")
                     continue
-
-                if not message_text:
-                    logger.debug("Skipping non-text message")
-                    continue
-
-                background_tasks.add_task(
-                    process_message,
-                    phone_number,
-                    message_text,
-                    message_id,
-                    combined_text,
-                )
 
         return {"status": "received"}
 
