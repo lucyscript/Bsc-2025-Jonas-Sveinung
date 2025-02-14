@@ -2,10 +2,12 @@
 
 import logging
 import os
+import time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
+from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
     fact_check,
     format_human_readable_result,
@@ -155,4 +157,15 @@ async def process_reaction(
     emoji,
 ):
     """Handles reaction processing asynchronously."""
+    conn = None
     print(f"Received reaction: {emoji}")
+    try:
+        conn = connect()
+        timestamp = int(time.time())
+        insert_feedback(conn, emoji, timestamp)
+        print(f"Received reaction: {emoji}")
+    except Exception as e:
+        logger.error(f"Error processing reaction: {e}")
+    finally:
+        if conn:
+            conn.close()
