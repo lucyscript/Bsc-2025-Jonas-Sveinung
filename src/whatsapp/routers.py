@@ -111,6 +111,11 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             f"Reaction context: {message_context[phone_number]}"
                         )
 
+                        background_tasks.add_task(
+                            process_reaction,
+                            emoji,
+                        )
+
                     else:
                         logger.debug(
                             f"Unsupported message type: {message_type}"
@@ -144,3 +149,10 @@ async def process_message(
         message=response_text,
         reply_to=message_id,
     )
+
+
+async def process_reaction(
+    emoji,
+):
+    """Handles reaction processing asynchronously."""
+    print(f"Received reaction: {emoji}")
