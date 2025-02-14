@@ -20,6 +20,9 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+message_context: dict[str, list[str]] = {}
+
+
 @router.get("/webhook")
 async def verify_webhook(request: Request):
     """Handles GET requests for webhook verification for WhatsApp Cloud API."""
@@ -68,6 +71,10 @@ async def receive_message(request: Request):
                     message_text = message.get("text", {}).get("body", "")
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
+                    if phone_number not in message_context:
+                        message_context[phone_number] = []
+                    message_context[phone_number].append(message_text)
+                    print(f"Message context: {message_context[phone_number]}")
                 except (KeyError, IndexError) as e:
                     logger.warning(f"Missing message data: {str(e)}")
                     continue
