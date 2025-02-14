@@ -77,6 +77,15 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     message_context[phone_number].append(message_text)
                     print(f"Message context: {message_context[phone_number]}")
 
+                    # Retrieve context and format input for generate endpoint
+                    context_string = message_context[phone_number][
+                        :-1
+                    ]  # Exclude the current message
+                    context = "\n".join(context_string)
+                    combined_text = "Prev:\n{}\nCurr:\n{}".format(
+                        context, message_text
+                    )
+
                 except (KeyError, IndexError) as e:
                     logger.warning(f"Missing message data: {str(e)}")
                     continue
@@ -86,7 +95,11 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     continue
 
                 background_tasks.add_task(
-                    process_message, phone_number, message_text, message_id
+                    process_message,
+                    phone_number,
+                    message_text,
+                    message_id,
+                    combined_text,
                 )
 
         return {"status": "received"}
@@ -96,9 +109,11 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(500, detail="Message processing error")
 
 
-async def process_message(phone_number, message_text, message_id):
+async def process_message(
+    phone_number, message_text, message_id, combined_text
+):
     """Handles fact-checking asynchronously."""
-    generate_text = await generate(message_text)
+    generate_text = await generate(combined_text)
     fact_response = await fact_check(message_text, generate_text)
     response_text = format_human_readable_result(fact_response)
     print(f"This is the generated text: {generate_text}")
