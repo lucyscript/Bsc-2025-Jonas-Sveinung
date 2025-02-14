@@ -8,6 +8,7 @@ import logging
 
 from fastapi import FastAPI
 
+from src.db.routers import router as db_router
 from src.whatsapp.routers import router as whatsapp_router
 
 app = FastAPI()
@@ -18,6 +19,9 @@ logger = logging.getLogger("main_app")
 
 # Mount the WhatsApp routes
 app.include_router(whatsapp_router)
+
+# Mount the database routes
+app.include_router(db_router)
 
 
 @app.get("/")

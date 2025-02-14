@@ -65,3 +65,24 @@ def insert_feedback(conn, emoji, timestamp):
     except Exception as e:
         logging.error(f"Error inserting feedback: {e}")
         raise
+
+
+def get_all_feedback(conn):
+    """Retrieves all feedback from the feedback table and returns."""
+    logging.info("Retrieving all feedback...")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT emoji, timestamp FROM feedback")
+            rows = cur.fetchall()
+            feedback_list = []
+            if rows:
+                logging.info("Feedback data:")
+                for row in rows:
+                    logging.info(f"  Emoji: {row[0]}, Timestamp: {row[1]}")
+                    feedback_list.append({"emoji": row[0], "timestamp": row[1]})
+            else:
+                logging.info("No feedback data found.")
+            return feedback_list
+    except Exception as e:
+        logging.error(f"Error retrieving feedback: {e}")
+        raise
