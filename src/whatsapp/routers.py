@@ -3,7 +3,7 @@
 import logging
 import os
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from src.fact_checker.utils import (
@@ -38,7 +38,7 @@ async def verify_webhook(request: Request):
 
 
 @router.post("/webhook")
-async def receive_message(request: Request):
+async def receive_message(request: Request, background_tasks: BackgroundTasks):
     """Process incoming WhatsApp messages with safe list handling."""
     try:
         payload = await request.json()
@@ -71,10 +71,12 @@ async def receive_message(request: Request):
                     message_text = message.get("text", {}).get("body", "")
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
+
                     if phone_number not in message_context:
                         message_context[phone_number] = []
                     message_context[phone_number].append(message_text)
                     print(f"Message context: {message_context[phone_number]}")
+
                 except (KeyError, IndexError) as e:
                     logger.warning(f"Missing message data: {str(e)}")
                     continue
@@ -83,20 +85,26 @@ async def receive_message(request: Request):
                     logger.debug("Skipping non-text message")
                     continue
 
-                # Fact-check and respond
-                generate_text = await generate(message_text)
-                fact_response = await fact_check(message_text, generate_text)
-                response_text = format_human_readable_result(fact_response)
-                print(f"This is the generated text: {generate_text}")
-
-                await send_whatsapp_message(
-                    phone_number=phone_number,
-                    message=response_text,
-                    reply_to=message_id,
+                background_tasks.add_task(
+                    process_message, phone_number, message_text, message_id
                 )
 
-        return {"status": "processed"}
+        return {"status": "received"}
 
     except Exception as e:
         logger.error(f"Processing failed: {str(e)}", exc_info=True)
         raise HTTPException(500, detail="Message processing error")
+
+
+async def process_message(phone_number, message_text, message_id):
+    """Handles fact-checking asynchronously."""
+    generate_text = await generate(message_text)
+    fact_response = await fact_check(message_text, generate_text)
+    response_text = format_human_readable_result(fact_response)
+    print(f"This is the generated text: {generate_text}")
+
+    await send_whatsapp_message(
+        phone_number=phone_number,
+        message=response_text,
+        reply_to=message_id,
+    )
