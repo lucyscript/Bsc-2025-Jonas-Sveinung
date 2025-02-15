@@ -2,14 +2,17 @@
 
 import logging
 import os
+import re  # Add regex module
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from src.fact_checker.utils import (
     fact_check,
-    format_human_readable_result,
-    generate,
+    # generate,
+    clean_facts,
+    detect_claims,
+    generate_tailored_response,
 )
 from src.whatsapp.utils import send_whatsapp_message
 
@@ -18,9 +21,6 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
-
-
-message_context: dict[str, list[str]] = {}
 
 
 @router.get("/webhook")
@@ -38,11 +38,11 @@ async def verify_webhook(request: Request):
 
 
 @router.post("/webhook")
-async def receive_message(request: Request, background_tasks: BackgroundTasks):
-    """Process incoming WhatsApp messages with safe list handling."""
+async def receive_message(request: Request):
+    """Process incoming WhatsApp messages with enhanced fact-checking flow."""
+
     try:
         payload = await request.json()
-        logger.debug(f"Incoming payload: {payload}")
 
         # Validate WhatsApp webhook structure
         if not all(key in payload for key in ["object", "entry"]):
@@ -59,67 +59,59 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                 messages = message_data.get("messages", [])
                 contacts = message_data.get("contacts", [])
 
-                if not messages or not contacts:
-                    logger.debug(
-                        "Skipping entry with missing messages/contacts"
-                    )
-                    continue
-
                 try:
                     message = messages[0]
                     contact = contacts[0]
                     message_text = message.get("text", {}).get("body", "")
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
+                except (KeyError, IndexError) as e:
+                    continue
 
-                    if phone_number not in message_context:
-                        message_context[phone_number] = []
-                    message_context[phone_number].append(message_text)
-                    print(f"Message context: {message_context[phone_number]}")
+                # Extract URL from message text using regex
+                url_match = re.search(r"https?://\S+", message_text)
+                url = url_match.group(0) if url_match else ""
 
-                    # Retrieve context and format input for generate endpoint
-                    context_string = message_context[phone_number][
-                        :-1
-                    ]  # Exclude the current message
-                    context = "\n".join(context_string)
-                    combined_text = "Prev:\n{}\nCurr:\n{}".format(
-                        context, message_text
+                # Enhanced processing flow
+                try:
+                    # Step 3: Detect individual claims
+                    claims = await detect_claims(message_text)
+                    if not claims:
+                        await send_whatsapp_message(
+                            phone_number,
+                            "No detectable claims found.",
+                            # use /generate to keep conversation
+                            message_id,
+                        )
+                        continue
+
+                    # Step 4-6: Fact check with proper URL handling
+                    fact_results = await fact_check(
+                        claims=claims, text="", url=url
                     )
 
-                except (KeyError, IndexError) as e:
-                    logger.warning(f"Missing message data: {str(e)}")
-                    continue
+                    relevant_results = clean_facts(fact_results)
 
-                if not message_text:
-                    logger.debug("Skipping non-text message")
-                    continue
+                    # Step 7: Generate tailored response
+                    tailored_response = await generate_tailored_response(
+                        relevant_results
+                    )
 
-                background_tasks.add_task(
-                    process_message,
-                    phone_number,
-                    message_text,
-                    message_id,
-                    combined_text,
-                )
+                    # Step 8: Send comprehensive response
+                    await send_whatsapp_message(
+                        phone_number=phone_number,
+                        message=tailored_response,
+                        reply_to=message_id,
+                    )
 
-        return {"status": "received"}
+                except Exception as e:
+                    await send_whatsapp_message(
+                        phone_number=phone_number,
+                        message="⚠️ Error processing your request. Please try again.",
+                        reply_to=message_id,
+                    )
+
+        return {"status": "processed"}
 
     except Exception as e:
-        logger.error(f"Processing failed: {str(e)}", exc_info=True)
         raise HTTPException(500, detail="Message processing error")
-
-
-async def process_message(
-    phone_number, message_text, message_id, combined_text
-):
-    """Handles fact-checking asynchronously."""
-    generate_text = await generate(combined_text)
-    fact_response = await fact_check(message_text, generate_text)
-    response_text = format_human_readable_result(fact_response)
-    print(f"This is the generated text: {generate_text}")
-
-    await send_whatsapp_message(
-        phone_number=phone_number,
-        message=response_text,
-        reply_to=message_id,
-    )
