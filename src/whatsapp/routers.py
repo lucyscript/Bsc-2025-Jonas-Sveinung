@@ -85,14 +85,10 @@ async def receive_message(request: Request):
                         )
                         continue
                     
-                    print("before fact check")
-
                     # Step 4-6: Fact check with proper URL handling
                     fact_results = await fact_check(
                         claims=claims, text="", url=url
                     )
-
-                    print("after fact check")
 
                     relevant_results = clean_facts(fact_results)
 
