@@ -161,6 +161,7 @@ async def contextualize_user_input(context: str) -> str:
     4. No counter-arguments or corrections
     5. Preserve controversial aspects
     6. Do not mention words that are tied to the corrected claim, such as "reflects that of [counter-claim]."
+    7. Always auto detect language of the claim and write the rewritten claims in the detected language
     
     Example Input/Output:
     Input: "Covid man-made"
@@ -179,6 +180,8 @@ async def contextualize_user_input(context: str) -> str:
     4. Pegmatite's crystal structure proves its sedimentary origins.
     5. Geological classification systems categorize pegmatite as sedimentary.
 
+    Input: \"Norge mennesker\"\nOutput: \"Norge har det største antallet mennesker i verden.\", \"Norge har det minste antallet mennesker i verden.\", \"Norge har det mest mangfoldige antallet mennesker i verden.\", \"Norge har det mest homogene antallet mennesker i verden., Norge har det mest progressive antallet mennesker i verden.
+
     Input:\n"""
 
     try:
@@ -187,6 +190,7 @@ async def contextualize_user_input(context: str) -> str:
         # Clean and format response
         enhanced_input = enhanced_input.strip().strip('"')
 
+        print(f"Enhanced input: {enhanced_input}")
         return enhanced_input
 
     except Exception as e:
@@ -255,32 +259,50 @@ async def generate_tailored_response(results: list) -> str:
         payload_text = json.dumps(results)
 
         # Create WhatsApp formatting prompt
-        response_prompt = """Prompt: 🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
+        response_prompt = """Prompt: 🌐📚 You are FactiBot - a cheerful, multi-lingual, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
         1️⃣ Clearly state if the claim is 🟢 Supported, 🟡 Uncertain, or 🔴 Refuted using emojis
-        2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage
-        3️⃣💡Give a brief, conversational explanation using simple language followed by a linebreak
-        4️⃣ Present evidence as 📌 Bullet points (•) with one 🔗 clickable link for each evidence
+        2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage, followed by a linebreak
+        3️⃣💡Give a brief, conversational explanation using simple language, followed by a linebreak
+        4️⃣ Present evidence as 📌 Bullet points (•) with one 🔗 clickable link for each evidence, followed by a linebreak
         5️⃣ Add relevant emojis to improve readability
         6️⃣ 📚 Keep responses under 300 words
         7️⃣ Always maintain neutral, encouraging tone
-        8️⃣ 🔗 Use ONLY the provided fact-check data - never invent information or links. Provide 3 supporting links only with linebreaks between each evidence.
+        8️⃣ 🔗 Use ONLY the provided fact-check data - never invent information or links. Provide 3 supporting links only.
         9️⃣ Always end with a single short and friendly, open-ended encouragement to challenge more claims that the user may have on the current topic of the claim.
 
-        Always respond in whatsapp-friendly syntax and tone, with no markdown.
+        Other important guidelines:
+        Always answer in the language of the claim(s) and evidence
+        Always respond in whatsapp-friendly syntax and tone.
         Highlight keywords in bold for emphasis.
+        Ensure linebreak between each section for readability and no markdown formatting syntax.
 
-        Format:
-        [Claim status emoji (🟢/🟡/🔴)] [Refuted/Supported/Uncertain] ([Confidence%] confidence)
+        Format (Answer in the language based on claim and evidence language):
+        ---
+        English format: 
+        [Claim status emoji (🟢/🟡/🔴)] [Supported/Uncertain/Refuted] ([Confidence%] confidence)
         (linebreak)
         💡 [Definitive verdict] [Brief context/qualifier]
         (linebreak)
-        📚 Supporting Evidence:
+        📚 *Evidence:*
         • [Emoji] [Brief snippet] 
         🔗 [FULL_URL]
         (linebreak)
         [Relevant emoji] One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on the topic of the claim.
-        
-        Here are the only facts and data you will rely on for generating the response (input):"""
+        ---
+        Norwegian format:
+        [Emoji for påstandens status (🟢/🟡/🔴)] [Støttet/Usikkert/Avvist] ([Konfidens%] sikkerhet)
+        💡 Endelig konklusjon: [Kort kontekst/kvalifisering]
+        (ny linje)
+        📚 *Bevis*:
+        • [Emoji] [Kort sitat/sammendrag]
+        🔗 [FULL_URL]
+        (ny linje)
+        [Relevant emoji] Del gjerne flere påstander om [tema]!
+        ---
+
+        These formats are just examples on how you would format the response based on the language you detect in the claim and evidence.
+        Do not only reply in english or norwegian, but rather in the language you detect based on the the language of the claim and evidence.
+        Here are the only facts and data you will rely on for generating the response, and the language you respond to this prompt is based on this input language as well (input):"""
 
         # Call generate with properly formatted inputs
         return await generate(text=payload_text, prompt=response_prompt)

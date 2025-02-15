@@ -9,7 +9,6 @@ from fastapi.responses import PlainTextResponse
 
 from src.fact_checker.utils import (
     fact_check,
-    # generate,
     clean_facts,
     detect_claims,
     generate_tailored_response,
