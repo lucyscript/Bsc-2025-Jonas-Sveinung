@@ -16,7 +16,7 @@ if not FACTIVERSE_API_TOKEN:
     raise ValueError("FACTIVERSE_API_TOKEN not found in .env file")
 
 API_BASE_URL = os.getenv("FACTIVERSE_API_URL", "https://dev.factiverse.ai/v1")
-REQUEST_TIMEOUT = 30  # seconds
+REQUEST_TIMEOUT = 10  # seconds
 
 
 async def generate(text: str, prompt: str):
@@ -139,6 +139,8 @@ async def detect_claims(text: str) -> list[str]:
                     if claim_text:
                         claims.append(claim_text)
 
+            print(f"Detected claims: {claims}")
+
             return claims
 
     except httpx.HTTPStatusError as e:
@@ -199,17 +201,19 @@ def clean_facts(json_data: dict) -> list:
     cleaned_results = []
 
     for claim in json_data.get("claims", []):
-        # Extract core claim information
+        # Extract core claim information with null checks
         claim_text = claim.get("claim", "")
-        final_verdict = (
-            "Correct" if claim.get("finalPrediction") == 1 else "Incorrect"
-        )
+        final_prediction = claim.get("finalPrediction")
+        final_verdict = "Uncertain"
+        if final_prediction is not None:
+            final_verdict = "Correct" if final_prediction == 1 else "Incorrect"
 
-        # Process evidence
+        # Process evidence with empty list handling
         supporting_evidence = []
         refuting_evidence = []
 
-        for evidence in claim.get("evidence", []):
+        # Handle null/empty evidence list
+        for evidence in claim.get("evidence") or []:
             label = evidence.get("labelDescription", "")
             if label not in ["SUPPORTS", "REFUTES"]:
                 continue
@@ -230,20 +234,16 @@ def clean_facts(json_data: dict) -> list:
             else:
                 refuting_evidence.append(evidence_entry)
 
-        # Calculate confidence score
-        confidence = claim.get("finalScore", 0) * 100  # Convert to percentage
+        # Safe confidence calculation with null fallback
+        confidence = (claim.get("finalScore") or 0) * 100
 
         cleaned_results.append(
             {
                 "claim": claim_text,
                 "verdict": final_verdict,
                 "confidence_percentage": confidence,
-                "supporting_evidence": supporting_evidence[
-                    :3
-                ],  # Top 3 supporting
-                "refuting_evidence": refuting_evidence[
-                    :1
-                ],  # Top refuting if exists
+                "supporting_evidence": supporting_evidence[:3],
+                "refuting_evidence": refuting_evidence[:1],
             }
         )
 
@@ -258,7 +258,7 @@ async def generate_tailored_response(results: list) -> str:
 
         # Create WhatsApp formatting prompt
         response_prompt = """Prompt: 🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
-        1️⃣ Clearly state if the claim is 🟢 Supported or 🔴 Refuted using emojis
+        1️⃣ Clearly state if the claim is 🟢 Supported, 🟡 Uncertain, or 🔴 Refuted using emojis
         2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage
         3️⃣💡Give a brief, conversational explanation using simple language
         4️⃣ Present evidence as 📌 Bullet points with one 🔗 clickable link for each evidence
@@ -272,7 +272,7 @@ async def generate_tailored_response(results: list) -> str:
         Highlight keywords in bold for emphasis.
 
         Format:
-        [Claim status emoji (🟢/🔴)] [Refuted/Supported] ([Confidence%] confidence)
+        [Claim status emoji (🟢/🟡/🔴)] [Refuted/Supported/Uncertain] ([Confidence%] confidence)
         (linebreak)
         💡 [Definitive verdict] [Brief context/qualifier]
         (linebreak)
