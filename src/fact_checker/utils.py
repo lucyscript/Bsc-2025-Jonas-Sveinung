@@ -180,12 +180,9 @@ async def contextualize_user_input(context: str) -> str:
         # Clean and format response
         enhanced_input = enhanced_input.strip().strip('"')
 
-        # Validate claim format
-        if enhanced_input.count('"') >= 8:  # At least 4 claims
-            return enhanced_input
+        print(enhanced_input)
 
-        # Fallback to original context if formatting fails
-        return f'"{context}"'
+        return enhanced_input
 
     except Exception as e:
         print(f"Context Error: {str(e)}")
@@ -244,6 +241,8 @@ def clean_facts(json_data: dict) -> list:
                 ],  # Top refuting if exists
             }
         )
+
+    print(cleaned_results)
 
     return cleaned_results
 
