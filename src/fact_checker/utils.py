@@ -139,8 +139,6 @@ async def detect_claims(text: str) -> list[str]:
                     if claim_text:
                         claims.append(claim_text)
 
-            print(f"Detected claims: {claims}")
-
             return claims
 
     except httpx.HTTPStatusError as e:
@@ -220,8 +218,8 @@ def clean_facts(json_data: dict) -> list:
 
             evidence_entry = {
                 "snippet": (
-                    evidence.get("evidenceSnippet", "")[:500] + "..."
-                    if len(evidence.get("evidenceSnippet", "")) > 500
+                    evidence.get("evidenceSnippet", "")[:1000] + "..."
+                    if len(evidence.get("evidenceSnippet", "")) > 1000
                     else evidence.get("evidenceSnippet", "")
                 ),
                 "url": evidence.get("url", ""),
@@ -260,8 +258,8 @@ async def generate_tailored_response(results: list) -> str:
         response_prompt = """Prompt: 🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
         1️⃣ Clearly state if the claim is 🟢 Supported, 🟡 Uncertain, or 🔴 Refuted using emojis
         2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage
-        3️⃣💡Give a brief, conversational explanation using simple language
-        4️⃣ Present evidence as 📌 Bullet points with one 🔗 clickable link for each evidence
+        3️⃣💡Give a brief, conversational explanation using simple language followed by a linebreak
+        4️⃣ Present evidence as 📌 Bullet points (•) with one 🔗 clickable link for each evidence
         5️⃣ Add relevant emojis to improve readability
         6️⃣ 📚 Keep responses under 300 words
         7️⃣ Always maintain neutral, encouraging tone
@@ -277,7 +275,7 @@ async def generate_tailored_response(results: list) -> str:
         💡 [Definitive verdict] [Brief context/qualifier]
         (linebreak)
         📚 Supporting Evidence:
-        - [Emoji] [Brief snippet] 
+        • [Emoji] [Brief snippet] 
         🔗 [FULL_URL]
         (linebreak)
         [Relevant emoji] One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on the topic of the claim.
