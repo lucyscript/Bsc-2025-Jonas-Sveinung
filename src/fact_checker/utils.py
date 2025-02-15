@@ -43,7 +43,7 @@ async def generate(text: str, prompt: str):
             response.raise_for_status()
             return (
                 response.json()
-                .get("full_output", "Summary unavailable")
+                .get("full_output")
                 .replace("**", "*")  # Clean accidental markdown
             )
 
@@ -154,33 +154,38 @@ async def detect_claims(text: str) -> list[str]:
 
 async def contextualize_user_input(context: str) -> str:
     """Generate context for a given user input using Factiverse API."""
-    prompt = """Rephrase the following input text into 5 definitive claim,
-        statement, or opinion. The claim should express a strong viewpoint or
-        assertion about the subject, maintaining the language of the input text.
-        The claim will later be verified with other tools. Consider the
-        'Previous Claims' when rephrasing the 'Current Claim' to provide more
-        specific and relevant context for fact-checking.\n\nExample Inputs and
-        Outputs:\n• Input: \"climate change\"\nOutput: \"Climate change is a
-        hoax.\", \"Climate change is a conspiracy theory.\", \"Climate change is
-        a natural phenomenon.\", \"Climate change is a global threat.\",
-        \"Climate change is a scientific fact.\"\n• Input: \"artificial
-        intelligence\"\nOutput: \"Artificial intelligence will surpass human
-        intelligence within a decade.\", \"Artificial intelligence is the future
-        of technology.\", \"Artificial intelligence poses a threat to humanity.
-        \", Artificial intelligence is revolutionizing industries.\",
-        \"Artificial intelligence is a double-edged sword.\"\n• Input: \"Norge
-        mennesker\"\nOutput: \"Norge har det største antallet mennesker i
-        verden.\", \"Norge har det minste antallet mennesker i verden.\",
-        \"Norge har det mest mangfoldige antallet mennesker i verden.\",
-        \"Norge har det mest homogene antallet mennesker i verden., Norge har
-        det mest progressive antallet mennesker i verden.\"\n\nInput:\n":"""
+    prompt = """\nRephrase the input text into 5 definitive claims that strictly follow these rules:
+    1. Use the EXACT terminology from the input
+    2. Always maintain the original perspective and intent
+    3. Formulate as complete, verifiable statements
+    4. No counter-arguments or corrections
+    5. Preserve controversial aspects
+    6. Do not mention words that are tied to the corrected claim, such as "reflects that of [counter-claim]."
+    
+    Example Input/Output:
+    Input: "Covid man-made"
+    Output: 
+    1. Covid is a man-made virus created in a laboratory.
+    2. The origins of Covid are tied to human manipulation rather than natural evolution.
+    3. There is substantial evidence suggesting that Covid was engineered for specific purposes.
+    4. The theory that Covid is man-made should be investigated more rigorously.
+    5. Covid being man-made poses significant risks to public safety and global health.
+
+    Input: "pegmatite is a sedimentary rock"
+    Output:
+    1. Pegmatite is a sedimentary rock formed through rapid cooling.
+    2. Sedimentary processes create pegmatite formations.
+    3. The composition of pegmatite matches typical sedimentary rocks.
+    4. Pegmatite's crystal structure proves its sedimentary origins.
+    5. Geological classification systems categorize pegmatite as sedimentary.
+
+    Input:\n"""
+
     try:
         enhanced_input = await generate(context, prompt)
 
         # Clean and format response
         enhanced_input = enhanced_input.strip().strip('"')
-
-        print(enhanced_input)
 
         return enhanced_input
 
@@ -242,8 +247,6 @@ def clean_facts(json_data: dict) -> list:
             }
         )
 
-    print(cleaned_results)
-
     return cleaned_results
 
 
@@ -254,7 +257,7 @@ async def generate_tailored_response(results: list) -> str:
         payload_text = json.dumps(results)
 
         # Create WhatsApp formatting prompt
-        response_prompt = """🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
+        response_prompt = """Prompt: 🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
         1️⃣ Clearly state if the claim is 🟢 Supported or 🔴 Refuted using emojis
         2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage
         3️⃣💡Give a brief, conversational explanation using simple language
@@ -263,7 +266,7 @@ async def generate_tailored_response(results: list) -> str:
         6️⃣ 📚 Keep responses under 300 words
         7️⃣ Always maintain neutral, encouraging tone
         8️⃣ 🔗 Use ONLY the provided fact-check data - never invent information or links. Provide 3 supporting links only with linebreaks between each evidence.
-        9️⃣ Always end with a single short and friendly, open-ended encouragement to challenge more claims that the user may have on this topic
+        9️⃣ Always end with a single short and friendly, open-ended encouragement to challenge more claims that the user may have on the current topic of the claim.
 
         Always respond in whatsapp-friendly syntax and tone, with no markdown.
         Highlight keywords in bold for emphasis.
@@ -277,9 +280,9 @@ async def generate_tailored_response(results: list) -> str:
         - [Emoji] [Brief snippet] 
         🔗 [FULL_URL]
         (linebreak)
-        [Emoji] One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on this topic.
+        [Relevant emoji] One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on the topic of the claim.
         
-        Here are the only facts and data you will rely on for generating the response:"""
+        Here are the only facts and data you will rely on for generating the response (input):"""
 
         # Call generate with properly formatted inputs
         return await generate(text=payload_text, prompt=response_prompt)
