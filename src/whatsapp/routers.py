@@ -12,6 +12,7 @@ from src.fact_checker.utils import (
     clean_facts,
     detect_claims,
     generate_tailored_response,
+    generate,
 )
 from src.whatsapp.utils import send_whatsapp_message
 
@@ -73,17 +74,54 @@ async def receive_message(request: Request):
 
                 # Enhanced processing flow
                 try:
-                    # Step 3: Detect individual claims
-                    claims = await detect_claims(message_text)
-                    if not claims:
+                    # Step 3: Detect individual claims with retry logic
+                    try:
+                        # First attempt with standard threshold
+                        claims = await detect_claims(message_text)
+
+                        # Second attempt with lower threshold if no claims found
+                        if not claims:
+                            claims = await detect_claims(
+                                message_text, threshold=0.7
+                            )
+                            logger.info(
+                                f"Low-confidence claims detected: {claims}"
+                            )
+
+                        if not claims:
+                            # Generate friendly explanation
+                            prompt = """📝 Hmm, I'm having trouble identifying clear claims. Could you help me by:
+                                1. Being more specific about the factual statement
+                                2. Providing different views and context to encourage better claims, and give examples of such claims to help the user with ideas
+                                3. Breaking complex ideas into single statements
+
+                                Example improvements:
+                                "Vaccines bad" → "COVID-19 vaccines cause permanent heart damage in some of recipients"
+                                "Weather changing" → "Global temperatures have increased over a few decades due to human activities"
+
+                                You are a a helper bot for WhatsApp users that focuses on improving the quality of claims
+                                Rephrase this message into claims in a friendly way:"""
+
+                            tailored_response = await generate(
+                                text=message_text, prompt=prompt
+                            )
+
+                            await send_whatsapp_message(
+                                phone_number,
+                                f"{tailored_response}",
+                                message_id,
+                            )
+                            continue
+
+                    except Exception as e:
+                        logger.error(f"Claim detection failed: {str(e)}")
                         await send_whatsapp_message(
                             phone_number,
-                            "No detectable claims found.",
-                            # use /generate to keep conversation
+                            "⚠️ Our fact-checking engine is feeling under the weather 🌧️. Please try again!",
                             message_id,
                         )
                         continue
-                    
+
                     # Step 4-6: Fact check with proper URL handling
                     fact_results = await fact_check(
                         claims=claims, text="", url=url

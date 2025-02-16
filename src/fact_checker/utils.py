@@ -2,6 +2,7 @@
 
 import json
 import os
+import asyncio
 
 import httpx
 from dotenv import load_dotenv
@@ -83,28 +84,52 @@ async def fact_check(claims: list[str], text: str, url: str = ""):
         "Content-Type": "application/json",
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.post(
-                f"{API_BASE_URL}/fact_check",
-                content=json.dumps(payload),
-                headers=headers,
+    max_retries = 3
+    retry_delay = 1  # Initial delay in seconds
+
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                response = await client.post(
+                    f"{API_BASE_URL}/fact_check",
+                    content=json.dumps(payload),
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response.json()
+
+        except httpx.HTTPStatusError as e:
+            if attempt < max_retries and e.response.status_code >= 500:
+                print(
+                    f"Retry attempt {attempt + 1}/{max_retries} for 5xx error"
+                )
+                await asyncio.sleep(
+                    retry_delay * (2**attempt)
+                )  # Exponential backoff
+                continue
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Fact check service error: {e.response.text}",
             )
-            response.raise_for_status()
-            return response.json()
+        except httpx.RequestError as e:
+            if attempt < max_retries:
+                print(
+                    f"Retry attempt {attempt + 1}/{max_retries} for connection error"
+                )
+                await asyncio.sleep(
+                    retry_delay * (2**attempt)
+                )  # Exponential backoff
+                continue
+            raise HTTPException(
+                status_code=503,
+                detail=f"Service temporarily unavailable: {str(e)}",
+            )
 
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=e.response.status_code,
-            detail=f"Fact check service error: {e.response.text}",
-        )
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=503, detail=f"Service temporarily unavailable: {str(e)}"
-        )
+    # This return is theoretically unreachable but satisfies type checker
+    return None
 
 
-async def detect_claims(text: str) -> list[str]:
+async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
     """Detect individual claims in text using Factiverse API."""
 
     enhanced_user_input = await contextualize_user_input(text)
@@ -112,7 +137,7 @@ async def detect_claims(text: str) -> list[str]:
     payload = {
         "logging": False,
         "text": enhanced_user_input,
-        "claimScoreThreshold": 0.9,
+        "claimScoreThreshold": threshold,
     }
 
     headers = {
@@ -180,7 +205,12 @@ async def contextualize_user_input(context: str) -> str:
     4. Pegmatite's crystal structure proves its sedimentary origins.
     5. Geological classification systems categorize pegmatite as sedimentary.
 
-    Input: \"Norge mennesker\"\nOutput: \"Norge har det største antallet mennesker i verden.\", \"Norge har det minste antallet mennesker i verden.\", \"Norge har det mest mangfoldige antallet mennesker i verden.\", \"Norge har det mest homogene antallet mennesker i verden., Norge har det mest progressive antallet mennesker i verden.
+    Input: \"Norge mennesker\"\n
+    Output: \"Norge har det største antallet mennesker i verden.\", 
+    \"Norge har det minste antallet mennesker i verden.\", 
+    \"Norge har det mest mangfoldige antallet mennesker i verden.\", 
+    \"Norge har det mest homogene antallet mennesker i verden., 
+    Norge har det mest progressive antallet mennesker i verden.
 
     Input:\n"""
 
@@ -271,13 +301,13 @@ async def generate_tailored_response(results: list) -> str:
         3️⃣💡Give a brief, conversational explanation using simple language, followed by a linebreak
         4️⃣ Present evidence as 📌 Bullet points (•) with one 🔗 clickable link for each evidence, followed by a linebreak
         5️⃣ Add relevant emojis to improve readability
-        6️⃣ 📚 Keep responses under 300 words
+        6️⃣ 📚 Keep responses under 300 words, and ensure linebreaks for clarity
         7️⃣ Always maintain neutral, encouraging tone
         8️⃣ 🔗 Use ONLY the provided fact-check data - never invent information or links. Provide 3 supporting links only.
         9️⃣ Always end with a single short and friendly, open-ended encouragement to challenge more claims that the user may have on the current topic of the claim.
 
         Other important guidelines:
-            Always answer in the language of the claim(s) for the entierty of the response.
+            Always reqpond in the language of the claim(s) for the entierty of the response.
             Always respond in whatsapp-friendly syntax and tone.
             Highlight keywords in bold for emphasis.
             Ensure linebreak between each section for readability, and never use markdown formatting syntax.
