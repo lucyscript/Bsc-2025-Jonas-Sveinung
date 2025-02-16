@@ -93,8 +93,6 @@ async def receive_message(request: Request):
                             continue
 
                         if not claims:
-                            lang = detect(message_text)
-
                             # New improved prompt for claim suggestions
                             prompt = """🔍 **Claim Improvement Assistant** 🔍
                             The user submitted: "{user_input}"
@@ -111,9 +109,9 @@ async def receive_message(request: Request):
                             - Never invent information, articles or statistics
 
                             Language Rules:
-                                🌍 Always respond in the original language of the claim, which is represented by this language code: {lang}
+                                🌍 Always respond in the original language of the claim
                                 💬 Maintain colloquial expressions from the user's language
-                                🚫 Never mix languages in response, purely respond in the language of this language code: {lang}
+                                🚫 Never mix languages in response
 
                             Example for "Vaccines bad":
                             1. mRNA vaccines show 0.3% myocarditis risk in males 18-24 within 14 days
@@ -130,8 +128,7 @@ async def receive_message(request: Request):
 
                             tailored_response = await generate(
                                 text=message_text,
-                                prompt=prompt.format(user_input=message_text),
-                                lang=lang,
+                                prompt=prompt.format(user_input=message_text)
                             )
 
                             # Split the response into individual claims
