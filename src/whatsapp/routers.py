@@ -122,10 +122,6 @@ async def receive_message(request: Request):
                             "{user_input}"
                             """
 
-                            print(
-                                f"Language for vague claim detected: {detect(message_text)}"
-                            )
-
                             tailored_response = await generate(
                                 text=message_text,
                                 prompt=prompt.format(user_input=message_text)
