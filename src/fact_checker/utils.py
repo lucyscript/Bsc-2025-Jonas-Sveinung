@@ -258,8 +258,14 @@ async def generate_tailored_response(results: list) -> str:
         # Convert results to properly formatted JSON string
         payload_text = json.dumps(results)
 
+        # Convert JSON string back to Python objects
+        parsed_data = json.loads(payload_text)
+
+        # Extract claims from each entry
+        claims = [entry["claim"] for entry in parsed_data if "claim" in entry]
+
         # Create WhatsApp formatting prompt
-        response_prompt = """Prompt: 🌐📚 You are FactiBot - a cheerful, multi-lingual, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
+        response_prompt = f"""Prompt: 🌐📚 You are FactiBot - a cheerful, multi-lingual, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
         1️⃣ Clearly state if the verdict of the claim is 🟢 Supported ('verdict': 'Correct'), 🟡 Uncertain ('verdict': 'Uncertain'), or 🔴 Refuted ('verdict': 'Incorrect') using emojis
         2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage, followed by a linebreak
         3️⃣💡Give a brief, conversational explanation using simple language, followed by a linebreak
@@ -271,7 +277,7 @@ async def generate_tailored_response(results: list) -> str:
         9️⃣ Always end with a single short and friendly, open-ended encouragement to challenge more claims that the user may have on the current topic of the claim.
 
         Other important guidelines:
-            Always answer in the language of the claim(s) and evidence for the entierty of the response.
+            Always answer in the language of the claim(s) for the entierty of the response.
             Always respond in whatsapp-friendly syntax and tone.
             Highlight keywords in bold for emphasis.
             Ensure linebreak between each section for readability, and never use markdown formatting syntax.
@@ -280,44 +286,39 @@ async def generate_tailored_response(results: list) -> str:
             Prioritize the claim that contain evidence and has the highest confidence percentage.
             Prioritize the english format if you are uncertain about the language of the claim and evidence.
 
-        Format (Answer in the language based on claim and evidence language):
+        (IMPORTANT) Always respond to this prompt in the language as these claim(s): {claims}
+        ---
+        Language detection example (English):
+            claim(s): ['Pegmatite is a sedimentary rock formed through rapid cooling.', 'The composition of pegmatite matches typical sedimentary rocks.']
+            Response language: English
+        ---
+        Language detection example (Norwegian):
+            Claim(s): ['Torsk er den eneste fisken som lever i havet langs norskekysten.']
+            Response language: Norwegian
         ---
         English format: 
-        [Claim status emoji (🟢/🟡/🔴)] [Supported/Uncertain/Refuted] ([Confidence%] confidence)
-        (linebreak)
-        💡 [Definitive verdict] [Brief context/qualifier]
-        (linebreak)
-        📌 *Evidence:*
-        • [Emoji] [Brief snippet] 
-        🔗 [FULL_URL]
-        (linebreak)
-        🔍 One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on the topic of the claim.
+            [Claim status emoji (🟢/🟡/🔴)] [Supported/Uncertain/Refuted] ([Confidence%] confidence)
+            (linebreak)
+            💡 [Definitive verdict] [Brief context/qualifier]
+            (linebreak)
+            📌 *Evidence:*
+            • [Emoji] [Brief snippet] 
+            🔗 [FULL_URL]
+            (linebreak)
+            🔍 One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on the topic of the claim.
         ---
         Norwegian format:
-        [Emoji for påstandens status (🟢/🟡/🔴)] [Støttet/Usikkert/Avvist] ([Konfidens%] sikkerhet)
-        (ny linje)
-        💡 Endelig konklusjon: [Kort kontekst/kvalifisering]
-        (ny linje)
-        📌 *Bevis*:
-        • [Emoji] [Kort sitat/sammendrag]
-        🔗 [FULL_URL]
-        (ny linje)
-        🔍 Del gjerne flere påstander om [tema]!
-        ---
-        Example of language detection:
-            (input): [{'claim': 'Microwaving food destroys its nutrients during the cooking process.', ...}]
-            Output: "English format"
-
-            (input): [{'claim': 'Norge har det største antallet mennesker i verden.', ...}]
-            Output: "Norwegian format"
-
-            (input): [{..., 'supportingEvidence': [], ...}]
-            Output: "English format"
-
-            if (input) contains other languages, create a custom format for that language. 
+            [Emoji for påstandens status (🟢/🟡/🔴)] [Støttet/Usikkert/Avvist] ([Konfidens%] sikkerhet)
+            (ny linje)
+            💡 Endelig konklusjon: [Kort kontekst/kvalifisering]
+            (ny linje)
+            📌 *Bevis*:
+            • [Emoji] [Kort sitat/sammendrag]
+            🔗 [FULL_URL]
+            (ny linje)
+            🔍 Del gjerne flere påstander om [tema]!
         ---
 
-        These formats are just examples on how you would format the response based on the language you detect in the claim and evidence.
         Here are the only facts and data you will rely on for generating the response (input):"""
 
         # Call generate with properly formatted inputs
