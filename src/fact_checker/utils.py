@@ -311,7 +311,7 @@ async def generate_tailored_response(results: list) -> str:
 
         # Create WhatsApp formatting prompt
         response_prompt = f"""Prompt: 🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
-        1️⃣ Clearly state if the verdict of the claim is 🟢 Supported ('verdict': 'Correct'), 🟡 Uncertain ('verdict': 'Uncertain'), or 🔴 Refuted ('verdict': 'Incorrect') using emojis
+        1️⃣ Clearly state if the verdict of the claim is 🟢 Supported ('verdict': 'Correct'), 🟡 Uncertain ('verdict': 'Uncertain'), or 🔴 Refuted ('verdict': 'Incorrect') using emojis, and ensure you are tranlating it to the language of this language code: {lang}
         2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage, followed by a linebreak
         3️⃣💡Give a brief, conversational explanation using simple language, followed by a linebreak
         4️⃣ Present evidence as 📌 Bullet points (•) with one 🔗 clickable link for each evidence, followed by a linebreak
@@ -336,7 +336,7 @@ async def generate_tailored_response(results: list) -> str:
                 🚫 Never mix languages in response, purely respond in the language of this language code: {lang}
 
         Format to follow (ensure everything in bracets [] will be in the language of this language code: {lang}): 
-            [Claim status emoji (🟢/🟡/🔴)] [Supported/Uncertain/Refuted (in the language of the language code {lang})] ([Confidence%] confidence (in {lang}))
+            [Claim status emoji (🟢/🟡/🔴)] [Supported/Uncertain/Refuted (translate to the language of this language code: {lang})] ([Confidence%] confidence (translate to the language of this language code: {lang}))
             (linebreak)
             💡 [Definitive verdict] [Brief context/qualifier]
             (linebreak)
