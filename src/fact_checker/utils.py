@@ -225,7 +225,6 @@ async def contextualize_user_input(context: str) -> str:
     Input:\n"""
 
     try:
-        print(f"Language for input enhancements: {detect(context)}")
         enhanced_input = await generate(context, prompt, lang)
 
         # Clean and format response
@@ -348,7 +347,6 @@ async def generate_tailored_response(results: list) -> str:
 
         Here are the only facts and data you will rely on for generating the response (input):"""
 
-        print(f"Language for final response: {detect(claims[0])}")
         # Call generate with properly formatted inputs
         return await generate(text=payload_text, prompt=response_prompt, lang=lang)
 
