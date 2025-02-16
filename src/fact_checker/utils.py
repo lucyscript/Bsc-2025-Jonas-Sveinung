@@ -182,6 +182,9 @@ async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
 
 async def contextualize_user_input(context: str) -> str:
     """Generate context for a given user input using Factiverse API."""
+
+    lang = detect(context)
+    
     prompt = """\nRephrase the input text into 5 definitive claims that strictly follow these rules:
     1. Use the EXACT terminology from the input
     2. Always maintain the original perspective and intent
@@ -189,7 +192,11 @@ async def contextualize_user_input(context: str) -> str:
     4. No counter-arguments or corrections
     5. Preserve controversial aspects
     6. Do not mention words that are tied to the corrected claim, such as "reflects that of [counter-claim]."
-    7. Always auto detect language of the claim and write the rewritten claims in the detected language
+
+    Language Rules:
+        🌍 Always respond in the original language of the claim, which is represented by this language code: {lang}
+        💬 Maintain colloquial expressions from the user's language
+        🚫 Never mix languages in response, purely respond in the language of this language code: {lang}
     
     Example Input/Output:
     Input: "Covid man-made"
@@ -218,12 +225,12 @@ async def contextualize_user_input(context: str) -> str:
     Input:\n"""
 
     try:
-        enhanced_input = await generate(context, prompt, detect(context))
+        print(f"Language for input enhancements: {detect(context)}")
+        enhanced_input = await generate(context, prompt, lang)
 
         # Clean and format response
         enhanced_input = enhanced_input.strip().strip('"')
 
-        print(f"Enhanced input: {enhanced_input}")
         return enhanced_input
 
     except Exception as e:
@@ -300,65 +307,50 @@ async def generate_tailored_response(results: list) -> str:
         # Extract claims from each entry
         claims = [entry["claim"] for entry in parsed_data if "claim" in entry]
 
+        lang = detect(claims[0])
+
         # Create WhatsApp formatting prompt
-        response_prompt = f"""Prompt: 🌐📚 You are FactiBot - a cheerful, multi-lingual, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
+        response_prompt = f"""Prompt: 🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
         1️⃣ Clearly state if the verdict of the claim is 🟢 Supported ('verdict': 'Correct'), 🟡 Uncertain ('verdict': 'Uncertain'), or 🔴 Refuted ('verdict': 'Incorrect') using emojis
         2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage, followed by a linebreak
         3️⃣💡Give a brief, conversational explanation using simple language, followed by a linebreak
         4️⃣ Present evidence as 📌 Bullet points (•) with one 🔗 clickable link for each evidence, followed by a linebreak
         5️⃣ Add relevant emojis to improve readability
         6️⃣ 📚 Keep responses under 300 words, and ensure linebreaks for clarity
-        7️⃣ Always maintain neutral, encouraging tone
-        8️⃣ 🔗 Use ONLY the provided fact-check data - never invent information or links. Provide 3 supporting links only.
+        7️⃣ Always maintain neutral, encouraging tone. Also, always respond in the language of this language code: {lang}
+        8️⃣ 🔗 Use ONLY the provided fact-check data - never invent information or links. Provide 3 supporting links only. If no links are available, do not invent them, and do not provide any confident fact-checking
         9️⃣ Always end with a single short and friendly, open-ended encouragement to challenge more claims that the user may have on the current topic of the claim.
 
         Other important guidelines:
-            Always reqpond in the language of the claim(s) for the entierty of the response.
             Always respond in whatsapp-friendly syntax and tone.
             Highlight keywords in bold for emphasis.
             Ensure linebreak between each section for readability, and never use markdown formatting syntax.
             Ensure the claim status emoji (🟢/🟡/🔴) is correctly tied to the verdict of the claim.
             Ensure the confidence percentage is accurate and rounded to the second decimal place.
             Prioritize the claim that contain evidence and has the highest confidence percentage.
-            Prioritize the english format if you are uncertain about the language of the claim and evidence.
+            Ensure the format is tranlated to the language of this language code: {lang}
 
-        (IMPORTANT) Always respond to this prompt in the language as these claim(s): {claims}
-        ---
-        Language detection example (English):
-            claim(s): ['Pegmatite is a sedimentary rock formed through rapid cooling.', 'The composition of pegmatite matches typical sedimentary rocks.']
-            Response language: English
-        ---
-        Language detection example (Norwegian):
-            Claim(s): ['Torsk er den eneste fisken som lever i havet langs norskekysten.']
-            Response language: Norwegian
-        ---
-        English format: 
-            [Claim status emoji (🟢/🟡/🔴)] [Supported/Uncertain/Refuted] ([Confidence%] confidence)
+            Language Rules:
+                🌍 Always respond in the original language of the claim, which is represented by this language code: {lang}
+                💬 Maintain colloquial expressions from the user's language
+                🚫 Never mix languages in response, purely respond in the language of this language code: {lang}
+
+        Format to follow (ensure everything in bracets [] will be in the language of this language code: {lang}): 
+            [Claim status emoji (🟢/🟡/🔴)] [Supported/Uncertain/Refuted (in the language of the language code {lang})] ([Confidence%] confidence (in {lang}))
             (linebreak)
             💡 [Definitive verdict] [Brief context/qualifier]
             (linebreak)
-            📌 *Evidence:*
+            📌 *Evidence (tranlate the word Evidence to the language of the language code {lang}):*
             • [Emoji] [Brief snippet] 
-            🔗 [FULL_URL]
+            🔗 [Link (do not translate the language of the url)]
             (linebreak)
-            🔍 One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on the topic of the claim.
-        ---
-        Norwegian format:
-            [Emoji for påstandens status (🟢/🟡/🔴)] [Støttet/Usikkert/Avvist] ([Konfidens%] sikkerhet)
-            (ny linje)
-            💡 Endelig konklusjon: [Kort kontekst/kvalifisering]
-            (ny linje)
-            📌 *Bevis*:
-            • [Emoji] [Kort sitat/sammendrag]
-            🔗 [FULL_URL]
-            (ny linje)
-            🔍 Del gjerne flere påstander om [tema]!
-        ---
+            🔍 [One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on the topic of the claim. ({lang})]
 
         Here are the only facts and data you will rely on for generating the response (input):"""
 
+        print(f"Language for final response: {detect(claims[0])}")
         # Call generate with properly formatted inputs
-        return await generate(text=payload_text, prompt=response_prompt, lang=detect(claims[0]))
+        return await generate(text=payload_text, prompt=response_prompt, lang=lang)
 
     except Exception as e:
         print(f"Tailored response generation failed: {str(e)}")
