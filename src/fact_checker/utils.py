@@ -7,6 +7,7 @@ import asyncio
 import httpx
 from dotenv import load_dotenv
 from fastapi import HTTPException
+from langdetect import detect
 
 # Load environment variables
 load_dotenv()
@@ -20,12 +21,13 @@ API_BASE_URL = os.getenv("FACTIVERSE_API_URL", "https://dev.factiverse.ai/v1")
 REQUEST_TIMEOUT = 10  # seconds
 
 
-async def generate(text: str, prompt: str):
+async def generate(text: str, prompt: str, lang: str = "en") -> str:
     """Generate context for a given claim using Factiverse API."""
     payload = {
         "logging": False,
         "text": text,
         "prompt": prompt,
+        "lang": lang
     }
 
     headers = {
@@ -77,6 +79,7 @@ async def fact_check(claims: list[str], text: str, url: str = ""):
         "text": text,
         "claims": claims,
         "url": url,
+        "lang": detect(claims[0])
     }
 
     headers = {
@@ -215,7 +218,7 @@ async def contextualize_user_input(context: str) -> str:
     Input:\n"""
 
     try:
-        enhanced_input = await generate(context, prompt)
+        enhanced_input = await generate(context, prompt, detect(context))
 
         # Clean and format response
         enhanced_input = enhanced_input.strip().strip('"')
@@ -245,7 +248,8 @@ def clean_facts(json_data: dict) -> list:
         refuting_evidence = []
 
         # Handle null/empty evidence list
-        for evidence in claim.get("evidence") or []:
+        evidence_list = claim.get("evidence") or []
+        for evidence in evidence_list:
             label = evidence.get("labelDescription", "")
             if label not in ["SUPPORTS", "REFUTES"]:
                 continue
@@ -266,8 +270,10 @@ def clean_facts(json_data: dict) -> list:
             else:
                 refuting_evidence.append(evidence_entry)
 
-        # Safe confidence calculation with null fallback
-        confidence = (claim.get("finalScore") or 0) * 100
+        # Process confidence with proper rounding
+        confidence = round(
+            (claim.get("finalScore") or 0) * 100, 2
+        )  # Round to 2 decimals
 
         cleaned_results.append(
             {
@@ -352,7 +358,7 @@ async def generate_tailored_response(results: list) -> str:
         Here are the only facts and data you will rely on for generating the response (input):"""
 
         # Call generate with properly formatted inputs
-        return await generate(text=payload_text, prompt=response_prompt)
+        return await generate(text=payload_text, prompt=response_prompt, lang=detect(claims[0]))
 
     except Exception as e:
         print(f"Tailored response generation failed: {str(e)}")
