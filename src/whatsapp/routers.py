@@ -93,6 +93,8 @@ async def receive_message(request: Request):
                             continue
 
                         if not claims:
+                            lang = detect(message_text)
+
                             # New improved prompt for claim suggestions
                             prompt = """🔍 **Claim Improvement Assistant** 🔍
                             The user submitted: "{user_input}"
@@ -106,7 +108,12 @@ async def receive_message(request: Request):
                             - Each claim must be standalone and copy-paste ready
                             - Use exact numbers and specific timeframes
                             - Maintain original intent but add concrete details
-                            - Separate claims with newlines only
+                            - Never invent information, articles or statistics
+
+                            Language Rules:
+                                🌍 Always respond in the original language of the claim, which is represented by this language code: {lang}
+                                💬 Maintain colloquial expressions from the user's language
+                                🚫 Never mix languages in response, purely respond in the language of this language code: {lang}
 
                             Example for "Vaccines bad":
                             1. mRNA vaccines show 0.3% myocarditis risk in males 18-24 within 14 days
@@ -117,10 +124,14 @@ async def receive_message(request: Request):
                             "{user_input}"
                             """
 
+                            print(
+                                f"Language for vague claim detected: {detect(message_text)}"
+                            )
+
                             tailored_response = await generate(
                                 text=message_text,
                                 prompt=prompt.format(user_input=message_text),
-                                lang=detect(message_text),
+                                lang=lang,
                             )
 
                             # Split the response into individual claims
@@ -133,7 +144,7 @@ async def receive_message(request: Request):
                             # Send initial message
                             await send_whatsapp_message(
                                 phone_number,
-                                "📝 Your claim is too vague. Try one of these specific versions:",
+                                "🔍 Let's clarify! Which of these specific versions matches your claim?",
                                 message_id,
                             )
 
