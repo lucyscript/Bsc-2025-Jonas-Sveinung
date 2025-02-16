@@ -3,6 +3,8 @@
 import logging
 import os
 import re  # Add regex module
+import asyncio
+from langdetect import detect
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -72,83 +74,126 @@ async def receive_message(request: Request):
                 url_match = re.search(r"https?://\S+", message_text)
                 url = url_match.group(0) if url_match else ""
 
-                # Enhanced processing flow
-                try:
-                    # Step 3: Detect individual claims with retry logic
+                # Enhanced processing flow with retry logic
+                max_retries = 3
+                retry_count = 0
+                success = False
+
+                while not success and retry_count < max_retries:
                     try:
-                        # First attempt with standard threshold
+                        # Step 3: Detect claims with improved retry
                         claims = await detect_claims(message_text)
 
-                        # Second attempt with lower threshold if no claims found
-                        if not claims:
+                        # If no claims found, try lower threshold once
+                        if not claims and retry_count == 0:
                             claims = await detect_claims(
                                 message_text, threshold=0.7
                             )
-                            logger.info(
-                                f"Low-confidence claims detected: {claims}"
-                            )
-
-                        if not claims:
-                            # Generate friendly explanation
-                            prompt = """📝 Hmm, I'm having trouble identifying clear claims. Could you help me by:
-                                1. Being more specific about the factual statement
-                                2. Providing different views and context to encourage better claims, and give examples of such claims to help the user with ideas
-                                3. Breaking complex ideas into single statements
-
-                                Example improvements:
-                                "Vaccines bad" → "COVID-19 vaccines cause permanent heart damage in some of recipients"
-                                "Weather changing" → "Global temperatures have increased over a few decades due to human activities"
-
-                                You are a a helper bot for WhatsApp users that focuses on improving the quality of claims
-                                Rephrase this message into claims in a friendly way:"""
-
-                            tailored_response = await generate(
-                                text=message_text, prompt=prompt
-                            )
-
-                            await send_whatsapp_message(
-                                phone_number,
-                                f"{tailored_response}",
-                                message_id,
-                            )
+                            retry_count += 1
                             continue
 
-                    except Exception as e:
-                        logger.error(f"Claim detection failed: {str(e)}")
-                        await send_whatsapp_message(
-                            phone_number,
-                            "⚠️ Our fact-checking engine is feeling under the weather 🌧️. Please try again!",
-                            message_id,
+                        if not claims:
+                            # New improved prompt for claim suggestions
+                            prompt = """🔍 **Claim Improvement Assistant** 🔍
+                            The user submitted: "{user_input}"
+
+                            Your task: Generate exactly 3 specific claims following this format:
+                            1. [Specific subject] + [Measurable action/effect] + [Timeframe/context]
+                            2. [Alternative angle] + [Quantifiable impact] + [Geographic scope]
+                            3. [Different aspect] + [Comparable metric] + [Relevant authority]
+
+                            Rules:
+                            - Each claim must be standalone and copy-paste ready
+                            - Use exact numbers and specific timeframes
+                            - Maintain original intent but add concrete details
+                            - Separate claims with newlines only
+
+                            Example for "Vaccines bad":
+                            1. mRNA vaccines show 0.3% myocarditis risk in males 18-24 within 14 days
+                            2. Pfizer COVID vaccine demonstrates 95% efficacy against hospitalization for 6 months
+                            3. Moderna booster increases antibody levels by 4x for Omicron variants (CDC 2023)
+
+                            Now create 3 improved claims for:
+                            "{user_input}"
+                            """
+
+                            tailored_response = await generate(
+                                text=message_text,
+                                prompt=prompt.format(user_input=message_text),
+                                lang=detect(message_text),
+                            )
+
+                            # Split the response into individual claims
+                            suggestions = [
+                                line.strip()
+                                for line in tailored_response.split("\n")
+                                if line.strip().startswith(("1.", "2.", "3."))
+                            ]
+
+                            # Send initial message
+                            await send_whatsapp_message(
+                                phone_number,
+                                "📝 Your claim is too vague. Try one of these specific versions:",
+                                message_id,
+                            )
+
+                            # Send each suggestion as separate message
+                            for idx, suggestion in enumerate(
+                                suggestions[:3], 1
+                            ):
+                                # Remove numbering and extra spaces
+                                clean_suggestion = re.sub(
+                                    r"^\d+\.\s*", "", suggestion
+                                ).strip()
+                                await send_whatsapp_message(
+                                    phone_number,
+                                    f"{idx}. {clean_suggestion}",
+                                    message_id,
+                                )
+                                await asyncio.sleep(
+                                    1
+                                )  # Brief pause between messages
+
+                            success = True
+                            continue
+
+                        # Step 4-6: Fact check with proper URL handling
+                        fact_results = await fact_check(
+                            claims=claims, text="", url=url
                         )
-                        continue
 
-                    # Step 4-6: Fact check with proper URL handling
-                    fact_results = await fact_check(
-                        claims=claims, text="", url=url
-                    )
+                        relevant_results = clean_facts(fact_results)
 
-                    relevant_results = clean_facts(fact_results)
+                        # Step 7: Generate tailored response
+                        tailored_response = await generate_tailored_response(
+                            relevant_results
+                        )
 
-                    print(relevant_results)
+                        # Step 8: Send comprehensive response
+                        await send_whatsapp_message(
+                            phone_number=phone_number,
+                            message=tailored_response,
+                            reply_to=message_id,
+                        )
 
-                    # Step 7: Generate tailored response
-                    tailored_response = await generate_tailored_response(
-                        relevant_results
-                    )
+                        success = True  # Mark success if we get through
 
-                    # Step 8: Send comprehensive response
-                    await send_whatsapp_message(
-                        phone_number=phone_number,
-                        message=tailored_response,
-                        reply_to=message_id,
-                    )
-
-                except Exception as e:
-                    await send_whatsapp_message(
-                        phone_number=phone_number,
-                        message="⚠️ Error processing your request. Please try again.",
-                        reply_to=message_id,
-                    )
+                    except Exception as e:
+                        retry_count += 1
+                        if retry_count == max_retries:
+                            await send_whatsapp_message(
+                                phone_number,
+                                "⚠️ We're experiencing high demand. Please try again in a minute!",
+                                message_id,
+                            )
+                            logger.error(f"Final attempt failed: {str(e)}")
+                        else:
+                            logger.warning(
+                                f"Retry {retry_count}/{max_retries} failed: {str(e)}"
+                            )
+                            await asyncio.sleep(
+                                2**retry_count
+                            )  # Exponential backoff
 
         return {"status": "processed"}
 
