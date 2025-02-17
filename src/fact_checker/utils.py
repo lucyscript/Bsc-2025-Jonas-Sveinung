@@ -293,11 +293,13 @@ def clean_facts(json_data: dict) -> list:
                 ),
                 "url": evidence.get("url", ""),
                 "domain": evidence.get("domainName", "Unknown source"),
-                "label": label,
+                "labelDescription": label,
                 "bias": evidence.get("domain_reliability", {})
                 .get("bias_data", {})
                 .get("bias", "Unknown"),
-                "stanceScore": evidence.get("stanceScore", 0),
+                "reliability": evidence.get("domain_reliability", {}).get(
+                    "Reliability", "Unknown"
+                ),
             }
 
             if label == "SUPPORTS":
@@ -310,97 +312,91 @@ def clean_facts(json_data: dict) -> list:
             (claim.get("finalScore") or 0) * 100, 2
         )  # Round to 2 decimals
 
-        # Dynamic evidence selection based on verdict
-        support_count = 3 if final_verdict == "Correct" else 1
-        refute_count = 3 if final_verdict == "Incorrect" else 1
-
-        # For uncertain verdicts, show balanced evidence
-        if final_verdict == "Uncertain":
-            support_count = 2
-            refute_count = 2
-
         cleaned_results.append(
             {
                 "claim": claim_text,
                 "verdict": final_verdict,
                 "confidence_percentage": confidence,
-                "supporting_evidence": supporting_evidence[:support_count],
-                "refuting_evidence": refuting_evidence[:refute_count],
+                "supporting_evidence": supporting_evidence,
+                "refuting_evidence": refuting_evidence,
             }
         )
 
     return cleaned_results
 
 
-async def generate_tailored_response(results: list) -> str:
-    """Generate context-aware response based on fact-check results."""
-    try:
-        # Group claims before processing
-        claim_groups = await group_claims(results)
+# async def generate_tailored_response(results: list) -> str:
+#     """Generate context-aware response based on fact-check results."""
+#     try:
+#         # Group claims before processing
+#         #claim_groups = await group_claims(results)
 
-        separator = "\n━━━━━━━━━━\n"  # Horizontal line separator
-        all_responses = []
-        for group in claim_groups:
-            # Process each claim group separately
-            group_response = await process_claim_group(group)
-            if group_response:
-                all_responses.append(group_response)
+#         separator = "\n━━━━━━━━━━\n"  # Horizontal line separator
+#         all_responses = []
+#         for group in claim_groups:
+#             # Process each claim group separately
+#             group_response = await process_claim_group(group)
+#             if group_response:
+#                 all_responses.append(group_response)
 
-        return separator.join(all_responses)
+#         return separator.join(all_responses)
 
-    except Exception as e:
-        print(f"Tailored response generation failed: {str(e)}")
-        return "⚠️ Service temporarily unavailable. Please try again later!"
+#     except Exception as e:
+#         print(f"Tailored response generation failed: {str(e)}")
+#         return "⚠️ Service temporarily unavailable. Please try again later!"
 
 
-async def group_claims(results: list) -> list:
-    """Group claims by shared keywords and themes."""
-    try:
-        claims = [entry["claim"] for entry in results]
-        lang = detect(claims[0]) if claims else "en"
+# async def group_claims(results: list) -> list:
+#     """Group claims by shared keywords and themes."""
+#     try:
+#         claims = [entry["claim"] for entry in results]
+#         print(claims)
 
-        # Extract nouns and proper nouns from claims
-        noun_pattern = re.compile(
-            r"\b[A-Z][a-z]+|\b\w+ing\b|\b\w+s\b", flags=re.IGNORECASE
-        )
-        claim_keywords = []
+#         # Improved noun detection pattern
+#         noun_pattern = re.compile(
+#             r"\b[A-Z][a-z]+\b|",
+#             flags=re.UNICODE,
+#         )
+#         claim_keywords = []
+#         for claim in claims:
+#             nouns = set(
+#                 word.lower()
+#                 for word in noun_pattern.findall(claim)
+#             )
+#             claim_keywords.append(
+#                 {"original": claim, "nouns": nouns, "group": -1}
+#             )
 
-        for claim in claims:
-            nouns = set(noun_pattern.findall(claim))
-            claim_keywords.append(
-                {"original": claim, "nouns": nouns, "group": -1}
-            )
+#         # Cluster claims based on keyword overlap
+#         current_group = 0
+#         for i in range(len(claim_keywords)):
+#             if claim_keywords[i]["group"] == -1:
+#                 claim_keywords[i]["group"] = current_group
+#                 for j in range(i + 1, len(claim_keywords)):
+#                     if (
+#                         claim_keywords[j]["group"] == -1
+#                         and len(
+#                             claim_keywords[i]["nouns"]
+#                             & claim_keywords[j]["nouns"]
+#                         )
+#                         > 0
+#                     ):
+#                         claim_keywords[j]["group"] = current_group
+#                 current_group += 1
 
-        # Cluster claims based on keyword overlap
-        current_group = 0
-        for i in range(len(claim_keywords)):
-            if claim_keywords[i]["group"] == -1:
-                claim_keywords[i]["group"] = current_group
-                for j in range(i + 1, len(claim_keywords)):
-                    if (
-                        claim_keywords[j]["group"] == -1
-                        and len(
-                            claim_keywords[i]["nouns"]
-                            & claim_keywords[j]["nouns"]
-                        )
-                        > 0
-                    ):
-                        claim_keywords[j]["group"] = current_group
-                current_group += 1
+#         # Create grouped results
+#         grouped_results = {}
+#         for ck, result in zip(claim_keywords, results):
+#             group_id = ck["group"]
+#             if group_id not in grouped_results:
+#                 grouped_results[group_id] = []
+#             grouped_results[group_id].append(result)
 
-        # Create grouped results
-        grouped_results = {}
-        for ck, result in zip(claim_keywords, results):
-            group_id = ck["group"]
-            if group_id not in grouped_results:
-                grouped_results[group_id] = []
-            grouped_results[group_id].append(result)
+#         return list(grouped_results.values())
 
-        return list(grouped_results.values())
-
-    except Exception as e:
-        print(f"Grouping error: {str(e)}")
-        return [results]  # Fallback to single group
+#     except Exception as e:
+#         print(f"Grouping error: {str(e)}")
+#         return [results]  # Fallback to single group
 
 
 async def process_claim_group(group: list) -> str:
@@ -409,6 +405,8 @@ async def process_claim_group(group: list) -> str:
         payload_text = json.dumps(group)
         claims = [entry["claim"] for entry in group]
         lang = detect(claims[0]) if claims else "en"
+
+        print(payload_text)
 
         # Simplified prompt focused on single group
         response_prompt = f"""Prompt: 🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
@@ -428,10 +426,12 @@ async def process_claim_group(group: list) -> str:
             Ensure linebreak between each section for readability, and never use markdown formatting syntax.
             Ensure the claim status emoji (🟢/🟡/🔴) is correctly tied to the verdict of the claim.
             Ensure the confidence percentage is accurate and rounded to the second decimal place.
-            Verdict is determined by the claim you decide to reference in the template.
-            Confidence is averaged stance scores of all evidence
-            Unsupported claims is labeled as such if no evidence exists.
+            Prioritize the claim that has the most total sources (including both supporting_evidence and refuting_evidence) with 'reliablity': 'Known'
+            Verdict is based on the 'verdict' of the claim that has the most total sources (including both supporting_evidence and refuting_evidence) with with 'reliablity': 'Known'
+            Confidence is based on the 'confidence_percentage' of the claim that has the most total sources (including both supporting_evidence and refuting_evidence) with with 'reliablity': 'Known'
             Ensure the format is tranlated to the language of this language code: {lang}
+            Always agree with the verdict of the claim that has the most total sources (including both supporting_evidence and refuting_evidence) with with 'reliablity': 'Known'
+            Rely purely on supporting_evidence if the verdict of the claim is 'Correct', and purely on refuting_evidence if the verdict of the claim is 'Incorrect'
 
             Language Rules:
                 🌍 Always respond in the original language of the claim, which is represented by this language code: {lang}

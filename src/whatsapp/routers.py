@@ -14,7 +14,8 @@ from src.fact_checker.utils import (
     fact_check,
     clean_facts,
     contextualize_user_input,
-    generate_tailored_response,
+    process_claim_group,
+    #generate_tailored_response,
     generate,
 )
 from src.whatsapp.utils import send_whatsapp_message
@@ -111,6 +112,8 @@ async def process_message(message_data: dict):
                 # Step 3: Detect claims with improved retry
                 claims = await contextualize_user_input(message_text)
 
+                print(claims)
+
                 # If no claims found, try lower threshold once
                 if not claims and retry_count == 0:
                     claims = await contextualize_user_input(
@@ -185,17 +188,13 @@ async def process_message(message_data: dict):
                     success = True
                     continue
 
-                print(claims)
-
                 # Step 4-6: Fact check with proper URL handling
                 fact_results = await fact_check(claims=claims, text="", url=url)
 
                 relevant_results = clean_facts(fact_results)
 
-                print(relevant_results)
-
                 # Step 7: Generate tailored response
-                tailored_response = await generate_tailored_response(
+                tailored_response = await process_claim_group(
                     relevant_results
                 )
 
