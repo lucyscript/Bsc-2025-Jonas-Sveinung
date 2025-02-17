@@ -344,7 +344,6 @@ async def group_claims(results: list) -> list:
     """Group claims by shared keywords and themes."""
     try:
         claims = [entry["claim"] for entry in results]
-        lang = detect(claims[0]) if claims else "en"
 
         # Extract nouns and proper nouns from claims
         noun_pattern = re.compile(
@@ -415,7 +414,7 @@ async def process_claim_group(group: list) -> str:
             Ensure linebreak between each section for readability, and never use markdown formatting syntax.
             Ensure the claim status emoji (🟢/🟡/🔴) is correctly tied to the verdict of the claim.
             Ensure the confidence percentage is accurate and rounded to the second decimal place.
-            Prioritize the claim that contain evidence and has the highest confidence percentage.
+            Prioritize the first claim, regardless of confidence percentage.
             Ensure the format is tranlated to the language of this language code: {lang}
 
             Language Rules:
