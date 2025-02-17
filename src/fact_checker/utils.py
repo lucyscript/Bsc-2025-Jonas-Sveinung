@@ -263,7 +263,7 @@ async def contextualize_user_input(
 
 
 def clean_facts(json_data: dict) -> list:
-    """Extract relevant fact-check results for tailored response."""
+    """Extract relevant fact-check results with dynamic evidence balancing."""
     cleaned_results = []
 
     for claim in json_data.get("claims", []):
@@ -306,13 +306,22 @@ def clean_facts(json_data: dict) -> list:
             (claim.get("finalScore") or 0) * 100, 2
         )  # Round to 2 decimals
 
+        # Dynamic evidence selection based on verdict
+        support_count = 3 if final_verdict == "Correct" else 1
+        refute_count = 3 if final_verdict == "Incorrect" else 1
+
+        # For uncertain verdicts, show balanced evidence
+        if final_verdict == "Uncertain":
+            support_count = 2
+            refute_count = 2
+
         cleaned_results.append(
             {
                 "claim": claim_text,
                 "verdict": final_verdict,
                 "confidence_percentage": confidence,
-                "supporting_evidence": supporting_evidence[:3],
-                "refuting_evidence": refuting_evidence[:1],
+                "supporting_evidence": supporting_evidence[:support_count],
+                "refuting_evidence": refuting_evidence[:refute_count],
             }
         )
 
@@ -341,37 +350,166 @@ async def generate_tailored_response(results: list) -> str:
 
 
 async def group_claims(results: list) -> list:
-    """Group claims by shared keywords and themes."""
+    """Universal language support claim grouping."""
     try:
         claims = [entry["claim"] for entry in results]
+        if not claims:
+            return []
 
-        # Extract nouns and proper nouns from claims
-        noun_pattern = re.compile(
-            r"\b[A-Z][a-z]+|\b\w+ing\b|\b\w+s\b", flags=re.IGNORECASE
+        # Detect primary language
+        lang = detect(claims[0]).split("-")[0]
+
+        # Script classification dictionary
+        script_categories = {
+            "latin": [
+                "af",
+                "az",
+                "bs",
+                "ca",
+                "cs",
+                "da",
+                "de",
+                "en",
+                "eo",
+                "es",
+                "et",
+                "eu",
+                "fi",
+                "fr",
+                "fy",
+                "ga",
+                "gl",
+                "hr",
+                "hu",
+                "id",
+                "is",
+                "it",
+                "kl",
+                "la",
+                "lt",
+                "lv",
+                "ms",
+                "nl",
+                "no",
+                "pl",
+                "pt",
+                "ro",
+                "sk",
+                "sl",
+                "sq",
+                "sv",
+                "sw",
+                "tl",
+                "tr",
+                "uz",
+                "vi",
+            ],
+            "cyrillic": [
+                "be",
+                "bg",
+                "kk",
+                "ky",
+                "mk",
+                "mn",
+                "ru",
+                "sr",
+                "tg",
+                "uk",
+            ],
+            "arabic": ["ar", "fa", "ps", "sd", "ug", "ur"],
+            "devanagari": ["hi", "mr", "ne", "sa"],
+            "cjk": ["zh", "ja", "ko"],
+            "southeast_asian": ["my", "th", "km", "lo"],
+            "dravidian": ["ta", "te", "kn", "ml"],
+            "ethiopic": ["am"],
+            "hebrew": ["he"],
+            "armenian": ["hy"],
+            "georgian": ["ka"],
+            "greek": ["el"],
+            "tibetan": ["bo"],
+            "other": ["jv", "su", "yi", "xh", "zu"],
+        }
+
+        # Determine script family
+        script = next(
+            (k for k, v in script_categories.items() if lang in v), "latin"
         )
-        claim_keywords = []
 
+        # Universal noun patterns by script
+        noun_patterns = {
+            "latin": r"\b[\p{Lu}][\p{Ll}]{2,}\b",
+            "cyrillic": r"\b[\p{IsCyrillic}]{3,}\b",
+            "arabic": r"[\p{Arabic}]{3,}",
+            "devanagari": r"[\p{Devanagari}]{3,}",
+            "cjk": r"[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]{2,}",
+            "southeast_asian": r"[\p{Thai}\p{Khmer}\p{Lao}]{3,}",
+            "dravidian": r"[\p{Tamil}\p{Telugu}\p{Kannada}\p{Malayalam}]{3,}",
+            "ethiopic": r"[\p{Ethiopic}]{3,}",
+            "hebrew": r"[\p{Hebrew}]{3,}",
+            "armenian": r"[\p{Armenian}]{3,}",
+            "georgian": r"[\p{Georgian}]{3,}",
+            "greek": r"[\p{Greek}]{3,}",
+            "tibetan": r"[\p{Tibetan}]{3,}",
+            "other": r"\w{3,}",
+        }
+
+        # Configure regex with Unicode properties
+        noun_re = re.compile(noun_patterns[script], re.UNICODE)
+
+        # Language-specific stop words (expanded core set)
+        stop_words = {
+            "ar": {"ال", "في", "من", "على", "أن"},
+            "zh": {"的", "是", "在", "和", "有"},
+            "hi": {"की", "के", "है", "में", "यह"},
+            "ja": {"の", "は", "に", "を", "が"},
+            "ko": {"의", "가", "이", "은", "는"},
+            "ru": {"и", "в", "на", "с", "по"},
+        }.get(lang, set())
+
+        # Tokenization strategy based on script
+        tokenize = {
+            "cjk": lambda x: list(x),
+            "southeast_asian": lambda x: re.findall(r"\w+", x),
+        }.get(script, lambda x: x.split())
+
+        claim_keywords = []
         for claim in claims:
-            nouns = set(noun_pattern.findall(claim))
+            # Script-aware processing
+            tokens = tokenize(claim)
+            nouns = {
+                token
+                for token in tokens
+                if (
+                    len(token) >= (2 if script == "cjk" else 3)
+                    and noun_re.match(token)
+                    and token.lower() not in stop_words
+                )
+            }
             claim_keywords.append(
                 {"original": claim, "nouns": nouns, "group": -1}
             )
 
-        # Cluster claims based on keyword overlap
+        # Adaptive clustering thresholds
+        min_overlap = {
+            "cjk": 2,
+            "arabic": 2,
+            "devanagari": 2,
+            "default": 1,
+        }.get(script, 1)
+
+        # Rest of clustering logic with script awareness
         current_group = 0
         for i in range(len(claim_keywords)):
             if claim_keywords[i]["group"] == -1:
                 claim_keywords[i]["group"] = current_group
                 for j in range(i + 1, len(claim_keywords)):
-                    if (
-                        claim_keywords[j]["group"] == -1
-                        and len(
+                    if claim_keywords[j]["group"] == -1:
+                        overlap = (
                             claim_keywords[i]["nouns"]
                             & claim_keywords[j]["nouns"]
                         )
-                        > 0
-                    ):
-                        claim_keywords[j]["group"] = current_group
+                        if len(overlap) >= min_overlap:
+                            claim_keywords[j]["group"] = current_group
                 current_group += 1
 
         # Create grouped results
@@ -385,8 +523,8 @@ async def group_claims(results: list) -> list:
         return list(grouped_results.values())
 
     except Exception as e:
-        print(f"Grouping error: {str(e)}")
-        return [results]  # Fallback to single group
+        print(f"Universal language grouping error: {str(e)}")
+        return [results]
 
 
 async def process_claim_group(group: list) -> str:
@@ -414,7 +552,7 @@ async def process_claim_group(group: list) -> str:
             Ensure linebreak between each section for readability, and never use markdown formatting syntax.
             Ensure the claim status emoji (🟢/🟡/🔴) is correctly tied to the verdict of the claim.
             Ensure the confidence percentage is accurate and rounded to the second decimal place.
-            Prioritize the first claim, regardless of confidence percentage.
+            Always use the first claim in the (input): as basis, together with its verdict and confidence percentage.
             Ensure the format is tranlated to the language of this language code: {lang}
 
             Language Rules:
