@@ -3,6 +3,7 @@
 import json
 import os
 import asyncio
+import re
 
 import httpx
 from dotenv import load_dotenv
@@ -21,13 +22,16 @@ API_BASE_URL = os.getenv("FACTIVERSE_API_URL", "https://dev.factiverse.ai/v1")
 REQUEST_TIMEOUT = 10  # seconds
 
 
-async def generate(text: str, prompt: str, lang: str = "en") -> str:
+async def generate(
+    text: str, prompt: str, lang: str = "en", threshold: float = 0.9
+) -> str:
     """Generate context for a given claim using Factiverse API."""
     payload = {
         "logging": False,
         "text": text,
         "prompt": prompt,
-        "lang": lang
+        "lang": lang,
+        "threshold": threshold,
     }
 
     headers = {
@@ -79,7 +83,7 @@ async def fact_check(claims: list[str], text: str, url: str = ""):
         "text": text,
         "claims": claims,
         "url": url,
-        "lang": detect(claims[0])
+        "lang": detect(claims[0]),
     }
 
     headers = {
@@ -132,109 +136,130 @@ async def fact_check(claims: list[str], text: str, url: str = ""):
     return None
 
 
-async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
-    """Detect individual claims in text using Factiverse API."""
+# async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
+#     """Detect individual claims in text using Factiverse API."""
 
-    enhanced_user_input = await contextualize_user_input(text)
+#     enhanced_user_input = await contextualize_user_input(text)
 
-    payload = {
-        "logging": False,
-        "text": enhanced_user_input,
-        "claimScoreThreshold": threshold,
-    }
+# payload = {
+#     "logging": False,
+#     "text": text,
+#     "claimScoreThreshold": threshold,
+# }
 
-    headers = {
-        "Authorization": f"Bearer {FACTIVERSE_API_TOKEN}",
-        "Content-Type": "application/json",
-    }
+# headers = {
+#     "Authorization": f"Bearer {FACTIVERSE_API_TOKEN}",
+#     "Content-Type": "application/json",
+# }
 
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.post(
-                f"{API_BASE_URL}/claim_detection",
-                content=json.dumps(payload),
-                headers=headers,
-            )
-            response.raise_for_status()
+# try:
+#     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+#         response = await client.post(
+#             f"{API_BASE_URL}/claim_detection",
+#             content=json.dumps(payload),
+#             headers=headers,
+#         )
+#         response.raise_for_status()
 
-            claims_data = response.json()
-            claims = []
+#         claims_data = response.json()
+# claims = []
 
-            # Directly extract from top-level detectedClaims
-            if "detectedClaims" in claims_data:
-                for claim in claims_data["detectedClaims"]:
-                    claim_text = str(claim.get("claim", "")).strip()
-                    if claim_text:
-                        claims.append(claim_text)
+# # Directly extract from top-level detectedClaims
+# if "detectedClaims" in claims_data:
+#     for claim in claims_data["detectedClaims"]:
+#         claim_text = str(claim.get("claim", "")).strip()
+#         if claim_text:
+#             claims.append(claim_text)
 
-            return claims
+# return claims
 
-    except httpx.HTTPStatusError as e:
-        print(f"Claim detection API error: {str(e)}")
-        return []
-    except KeyError as e:
-        print(f"Missing expected field in response: {str(e)}")
-        return []
-    except Exception as e:
-        print(f"Error processing claims: {str(e)}")
-        return []
+# except httpx.HTTPStatusError as e:
+#     print(f"Claim detection API error: {str(e)}")
+#     return []
+# except KeyError as e:
+#     print(f"Missing expected field in response: {str(e)}")
+#     return []
+# except Exception as e:
+#     print(f"Error processing claims: {str(e)}")
+#     return []
 
 
-async def contextualize_user_input(context: str) -> str:
+async def contextualize_user_input(
+    context: str, threshold: float = 0.9
+) -> list[str]:
     """Generate context for a given user input using Factiverse API."""
-
     lang = detect(context)
-    
-    prompt = """\nRephrase the input text into 5 definitive claims that strictly follow these rules:
+
+    prompt = """Rephrase the input text into 5 definitive claims that strictly follow these rules:
     1. Use the EXACT terminology from the input
     2. Always maintain the original perspective and intent
     3. Formulate as complete, verifiable statements
     4. No counter-arguments or corrections
     5. Preserve controversial aspects
-    6. Do not mention words that are tied to the corrected claim, such as "reflects that of [counter-claim]."
+    6. Do not mention words that are tied to the corrected claim, such as 'reflects that of [counter-claim].'
+    7. Each claim must be entirely in {lang} - never mix languages within a claim
+    8. Claims must be atomic - no multiple sentences separated by newlines
+    9. Never include language codes like '\\nIt...' in claims
 
     Language Rules:
-        🌍 Always respond in the original language of the claim, which is represented by this language code: {lang}
-        💬 Maintain colloquial expressions from the user's language
-        🚫 Never mix languages in response, purely respond in the language of this language code: {lang}
+        🌍 Always respond in the original language of the input text ({lang})
+        💬 Maintain colloquial expressions from the users language
+        🚫 Never mix languages in response, purely respond in {lang}
     
     Example Input/Output:
-    Input: "Covid man-made"
+    Input: Covid man-made
     Output: 
-    1. Covid is a man-made virus created in a laboratory.
-    2. The origins of Covid are tied to human manipulation rather than natural evolution.
-    3. There is substantial evidence suggesting that Covid was engineered for specific purposes.
-    4. The theory that Covid is man-made should be investigated more rigorously.
-    5. Covid being man-made poses significant risks to public safety and global health.
+       Covid is a man-made virus created in a laboratory.,
+       The origins of Covid are tied to human manipulation rather than natural evolution.,
+       There is substantial evidence suggesting that Covid was engineered for specific purposes.,
+       The theory that Covid is man-made should be investigated more rigorously.,
+       Covid being man-made poses significant risks to public safety and global health.
 
-    Input: "pegmatite is a sedimentary rock"
+    Input: pegmatite is a sedimentary rock
     Output:
-    1. Pegmatite is a sedimentary rock formed through rapid cooling.
-    2. Sedimentary processes create pegmatite formations.
-    3. The composition of pegmatite matches typical sedimentary rocks.
-    4. Pegmatite's crystal structure proves its sedimentary origins.
-    5. Geological classification systems categorize pegmatite as sedimentary.
+       Pegmatite is a sedimentary rock formed through rapid cooling.,
+       Sedimentary processes create pegmatite formations.,
+       The composition of pegmatite matches typical sedimentary rocks.,
+       Pegmatite's crystal structure proves its sedimentary origins.,
+       Geological classification systems categorize pegmatite as sedimentary.
 
-    Input: \"Norge mennesker\"\n
-    Output: \"Norge har det største antallet mennesker i verden.\", 
-    \"Norge har det minste antallet mennesker i verden.\", 
-    \"Norge har det mest mangfoldige antallet mennesker i verden.\", 
-    \"Norge har det mest homogene antallet mennesker i verden., 
-    Norge har det mest progressive antallet mennesker i verden.
+    Input: Norge mennesker
+    Output: 
+        Norge har det største antallet mennesker i verden., 
+        Norge har det minste antallet mennesker i verden., 
+        Norge har det mest mangfoldige antallet mennesker i verden., 
+        Norge har det mest homogene antallet mennesker i verden., 
+        Norge har det mest progressive antallet mennesker i verden.
 
-    Input:\n"""
+    Input:"""
 
     try:
-        enhanced_input = await generate(context, prompt, lang)
+        enhanced_input = await generate(
+            text=context,
+            prompt=prompt.format(lang=lang),
+            lang=lang,
+            threshold=threshold,
+        )
 
-        # Clean and format response
-        enhanced_input = enhanced_input.strip().strip('"')
+        # Improved cleaning with language consistency check
+        claims = []
+        for raw_claim in re.split(r"[\n,]+", enhanced_input):
+            claim = (
+                raw_claim.strip()
+                .strip('",.')  # Remove edge punctuation
+                .replace("\\n", " ")  # Remove newline markers
+                .replace("  ", " ")  # Fix double spaces
+            )
 
-        return enhanced_input
+            # Verify claim language matches context
+            if claim and detect(claim) == lang:
+                claims.append(claim)
+
+        return claims[:5]  # Return first 5 valid claims
 
     except Exception as e:
         print(f"Context Error: {str(e)}")
-        return f'"{context}"'
+        return [f'"{context}"']
 
 
 def clean_facts(json_data: dict) -> list:
@@ -297,25 +322,89 @@ def clean_facts(json_data: dict) -> list:
 async def generate_tailored_response(results: list) -> str:
     """Generate context-aware response based on fact-check results."""
     try:
-        # Convert results to properly formatted JSON string
-        payload_text = json.dumps(results)
+        # Group claims before processing
+        claim_groups = await group_claims(results)
 
-        # Convert JSON string back to Python objects
-        parsed_data = json.loads(payload_text)
+        separator = "\n━━━━━━━━━━\n"  # Horizontal line separator
+        all_responses = []
+        for group in claim_groups:
+            # Process each claim group separately
+            group_response = await process_claim_group(group)
+            if group_response:
+                all_responses.append(group_response)
 
-        # Extract claims from each entry
-        claims = [entry["claim"] for entry in parsed_data if "claim" in entry]
+        return separator.join(all_responses)
 
-        lang = detect(claims[0])
+    except Exception as e:
+        print(f"Tailored response generation failed: {str(e)}")
+        return "⚠️ Service temporarily unavailable. Please try again later!"
 
-        # Create WhatsApp formatting prompt
+
+async def group_claims(results: list) -> list:
+    """Group claims by shared keywords and themes."""
+    try:
+        claims = [entry["claim"] for entry in results]
+        lang = detect(claims[0]) if claims else "en"
+
+        # Extract nouns and proper nouns from claims
+        noun_pattern = re.compile(
+            r"\b[A-Z][a-z]+|\b\w+ing\b|\b\w+s\b", flags=re.IGNORECASE
+        )
+        claim_keywords = []
+
+        for claim in claims:
+            nouns = set(noun_pattern.findall(claim))
+            claim_keywords.append(
+                {"original": claim, "nouns": nouns, "group": -1}
+            )
+
+        # Cluster claims based on keyword overlap
+        current_group = 0
+        for i in range(len(claim_keywords)):
+            if claim_keywords[i]["group"] == -1:
+                claim_keywords[i]["group"] = current_group
+                for j in range(i + 1, len(claim_keywords)):
+                    if (
+                        claim_keywords[j]["group"] == -1
+                        and len(
+                            claim_keywords[i]["nouns"]
+                            & claim_keywords[j]["nouns"]
+                        )
+                        > 0
+                    ):
+                        claim_keywords[j]["group"] = current_group
+                current_group += 1
+
+        # Create grouped results
+        grouped_results = {}
+        for ck, result in zip(claim_keywords, results):
+            group_id = ck["group"]
+            if group_id not in grouped_results:
+                grouped_results[group_id] = []
+            grouped_results[group_id].append(result)
+
+        return list(grouped_results.values())
+
+    except Exception as e:
+        print(f"Grouping error: {str(e)}")
+        return [results]  # Fallback to single group
+
+
+async def process_claim_group(group: list) -> str:
+    """Process a single claim group through the generation pipeline."""
+    try:
+        payload_text = json.dumps(group)
+        claims = [entry["claim"] for entry in group]
+        lang = detect(claims[0]) if claims else "en"
+
+        # Simplified prompt focused on single group
         response_prompt = f"""Prompt: 🌐📚 You are FactiBot - a cheerful, emoji-friendly fact-checking assistant for WhatsApp! Your mission:
         1️⃣ Clearly state if the verdict of the claim is 🟢 Supported ('verdict': 'Correct'), 🟡 Uncertain ('verdict': 'Uncertain'), or 🔴 Refuted ('verdict': 'Incorrect') using emojis, and ensure you are tranlating it to the language of this language code: {lang}
         2️⃣ Give a claim summary quoting the original claim text clarifying the correct stance with confidence percentage, followed by a linebreak
         3️⃣💡Give a brief, conversational explanation using simple language, followed by a linebreak
         4️⃣ Present evidence as 📌 Bullet points (•) with one 🔗 clickable link for each evidence, followed by a linebreak
         5️⃣ Add relevant emojis to improve readability
-        6️⃣ 📚 Keep responses under 300 words, and ensure linebreaks for clarity
+        6️⃣ 📚 Keep responses under 300 words, and ensure linebreaks for clarity. 
         7️⃣ Always maintain neutral, encouraging tone. Also, always respond in the language of this language code: {lang}
         8️⃣ 🔗 Use ONLY the provided fact-check data - never invent information or links. Provide 3 supporting links only. If no links are available, do not invent them, and do not provide any confident fact-checking
         9️⃣ Always end with a single short and friendly, open-ended encouragement to challenge more claims that the user may have on the current topic of the claim.
@@ -331,7 +420,7 @@ async def generate_tailored_response(results: list) -> str:
 
             Language Rules:
                 🌍 Always respond in the original language of the claim, which is represented by this language code: {lang}
-                💬 Maintain colloquial expressions from the user's language
+                💬 Maintain colloquial expressions from the users language
                 🚫 Never mix languages in response, purely respond in the language of this language code: {lang}
 
         Format to follow (ensure everything in bracets [] will be in the language of this language code: {lang}): 
@@ -347,9 +436,10 @@ async def generate_tailored_response(results: list) -> str:
 
         Here are the only facts and data you will rely on for generating the response (input):"""
 
-        # Call generate with properly formatted inputs
-        return await generate(text=payload_text, prompt=response_prompt, lang=lang)
+        return await generate(
+            text=payload_text, prompt=response_prompt, lang=lang
+        )
 
     except Exception as e:
-        print(f"Tailored response generation failed: {str(e)}")
-        return "⚠️ Service temporarily unavailable. Please try again later!"
+        print(f"Group processing failed: {str(e)}")
+        return ""

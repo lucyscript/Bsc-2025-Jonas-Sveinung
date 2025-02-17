@@ -13,7 +13,7 @@ from typing import Set
 from src.fact_checker.utils import (
     fact_check,
     clean_facts,
-    detect_claims,
+    contextualize_user_input,
     generate_tailored_response,
     generate,
 )
@@ -109,11 +109,13 @@ async def process_message(message_data: dict):
         while not success and retry_count < max_retries:
             try:
                 # Step 3: Detect claims with improved retry
-                claims = await detect_claims(message_text)
+                claims = await contextualize_user_input(message_text)
 
                 # If no claims found, try lower threshold once
                 if not claims and retry_count == 0:
-                    claims = await detect_claims(message_text, threshold=0.7)
+                    claims = await contextualize_user_input(
+                        message_text, threshold=0.7
+                    )
                     retry_count += 1
                     continue
 
@@ -183,10 +185,14 @@ async def process_message(message_data: dict):
                     success = True
                     continue
 
+                print(claims)
+
                 # Step 4-6: Fact check with proper URL handling
                 fact_results = await fact_check(claims=claims, text="", url=url)
 
                 relevant_results = clean_facts(fact_results)
+
+                print(relevant_results)
 
                 # Step 7: Generate tailored response
                 tailored_response = await generate_tailored_response(
