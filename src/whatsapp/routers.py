@@ -122,16 +122,17 @@ async def process_message(message_data: dict):
                     prompt = """🔍 **Claim Improvement Assistant** 🔍
                     The user submitted: "{user_input}"
 
-                    Your task: Generate exactly 3 specific claims following this format:
-                    1. [Specific subject] + [Measurable action/effect] + [Timeframe/context]
-                    2. [Alternative angle] + [Quantifiable impact] + [Geographic scope]
-                    3. [Different aspect] + [Comparable metric] + [Relevant authority]
+                    Generate exactly 3 claims following this format, avoiding statistics, specific institutions, or named regions:
+                        [General subject] + [Non-numerical effect/action] + [Vague timeframe/context]
+                        [Alternative angle] + [Qualitative impact] + [Broad geographic scope]
+                        [Distinct aspect] + [Relative comparison] + [Generalized authority]
 
                     Rules:
                     - Each claim must be standalone and copy-paste ready
                     - Use exact numbers and specific timeframes
                     - Maintain original intent but add concrete details
                     - Never invent information, articles or statistics
+                    - 
 
                     Language Rules:
                         🌍 Always respond in the original language of the claim
@@ -139,9 +140,9 @@ async def process_message(message_data: dict):
                         🚫 Never mix languages in response
 
                     Example for "Vaccines bad":
-                    1. mRNA vaccines show 0.3% myocarditis risk in males 18-24 within 14 days
-                    2. Pfizer COVID vaccine demonstrates 95% efficacy against hospitalization for 6 months
-                    3. Moderna booster increases antibody levels by 4x for Omicron variants (CDC 2023)
+                        Some reports suggest that certain vaccines might be associated with heart-related issues in younger individuals.
+                        Certain vaccines are reported to offer strong protection against severe illness for a limited duration.
+                        Booster doses for some vaccines could improve immune defenses against newer strains, per health officials.
 
                     Now create 3 improved claims for:
                     "{user_input}"

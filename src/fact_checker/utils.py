@@ -341,7 +341,7 @@ async def generate_tailored_response(results: list) -> str:
             (linebreak)
             📌 *Evidence (tranlate the word Evidence to the language of the language code {lang}):*
             • [Emoji] [Brief snippet] 
-            🔗 [Link (do not translate the language of the url)]
+            🔗 [FULL_URL (do not translate the language of the url)]
             (linebreak)
             🔍 [One short sentence closing encouragement with a concise, friendly invitation encouraging the user to share more claims on the topic of the claim. ({lang})]
 
