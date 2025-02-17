@@ -552,7 +552,9 @@ async def process_claim_group(group: list) -> str:
             Ensure linebreak between each section for readability, and never use markdown formatting syntax.
             Ensure the claim status emoji (🟢/🟡/🔴) is correctly tied to the verdict of the claim.
             Ensure the confidence percentage is accurate and rounded to the second decimal place.
-            Always use the first claim in the (input): as basis, together with its verdict and confidence percentage.
+            Verdict is determined by majority stance of evidence (supporting/refuting).
+            Confidence is averaged stance scores (confidence_percentage) of all evidence
+            Unsupported claims is labeled as such if no evidence exists.
             Ensure the format is tranlated to the language of this language code: {lang}
 
             Language Rules:
