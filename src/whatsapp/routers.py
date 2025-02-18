@@ -125,7 +125,7 @@ async def process_message(message_data: dict):
                 if not claims:
                     # New improved prompt for claim suggestions
                     prompt = """🔍 **Claim Improvement Assistant** 🔍
-                    The user submitted: "{user_input}"
+                    The user submitted: '{user_input}'
 
                     Generate exactly 3 claims following this format, avoiding statistics, specific institutions, or named regions:
                         [General subject] + [Non-numerical effect/action] + [Vague timeframe/context]
@@ -137,21 +137,19 @@ async def process_message(message_data: dict):
                     - Use exact numbers and specific timeframes
                     - Maintain original intent but add concrete details
                     - Never invent information, articles or statistics
-                    - 
 
                     Language Rules:
                         🌍 Always respond in the original language of the claim
-                        💬 Maintain colloquial expressions from the user's language
+                        💬 Maintain colloquial expressions from the users language
                         🚫 Never mix languages in response
 
-                    Example for "Vaccines bad":
+                    Example for 'Vaccines bad':
                         Some reports suggest that certain vaccines might be associated with heart-related issues in younger individuals.
                         Certain vaccines are reported to offer strong protection against severe illness for a limited duration.
                         Booster doses for some vaccines could improve immune defenses against newer strains, per health officials.
 
                     Now create 3 improved claims for:
-                    "{user_input}"
-                    """
+                    '{user_input}'"""
 
                     tailored_response = await generate(
                         text=message_text,
