@@ -5,6 +5,7 @@ import os
 import re  # Add regex module
 import asyncio
 from contextlib import suppress
+from langdetect import detect
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -12,8 +13,9 @@ from typing import Set
 
 from src.fact_checker.utils import (
     fact_check,
+    stance_detection,
     clean_facts,
-    contextualize_user_input,
+    detect_claims,
     process_claim_group,
     #generate_tailored_response,
     generate,
@@ -110,90 +112,95 @@ async def process_message(message_data: dict):
         while not success and retry_count < max_retries:
             try:
                 # Step 3: Detect claims with improved retry
-                claims = await contextualize_user_input(message_text)
+                claims = await detect_claims(message_text)
 
-                print(claims)
+                if claims == []:
+                    tailored_response = await process_claim_group(claims, message_text)
 
-                # If no claims found, try lower threshold once
-                if not claims and retry_count == 0:
-                    claims = await contextualize_user_input(
-                        message_text, threshold=0.7
-                    )
-                    retry_count += 1
-                    continue
-
-                if not claims:
-                    # New improved prompt for claim suggestions
-                    prompt = """🔍 **Claim Improvement Assistant** 🔍
-                    The user submitted: '{user_input}'
-
-                    Generate exactly 3 claims following this format, avoiding statistics, specific institutions, or named regions:
-                        [General subject] + [Non-numerical effect/action] + [Vague timeframe/context]
-                        [Alternative angle] + [Qualitative impact] + [Broad geographic scope]
-                        [Distinct aspect] + [Relative comparison] + [Generalized authority]
-
-                    Rules:
-                    - Each claim must be standalone and copy-paste ready
-                    - Use exact numbers and specific timeframes
-                    - Maintain original intent but add concrete details
-                    - Never invent information, articles or statistics
-
-                    Language Rules:
-                        🌍 Always respond in the original language of the claim
-                        💬 Maintain colloquial expressions from the users language
-                        🚫 Never mix languages in response
-
-                    Example for 'Vaccines bad':
-                        Some reports suggest that certain vaccines might be associated with heart-related issues in younger individuals.
-                        Certain vaccines are reported to offer strong protection against severe illness for a limited duration.
-                        Booster doses for some vaccines could improve immune defenses against newer strains, per health officials.
-
-                    Now create 3 improved claims for:
-                    '{user_input}'"""
-
-                    tailored_response = await generate(
-                        text=message_text,
-                        prompt=prompt.format(user_input=message_text),
-                    )
-
-                    # Split the response into individual claims
-                    suggestions = [
-                        line.strip()
-                        for line in tailored_response.split("\n")
-                        if line.strip().startswith(("1.", "2.", "3."))
-                    ]
-
-                    # Send initial message
                     await send_whatsapp_message(
-                        phone_number,
-                        "🔍 Let's clarify! Which of these specific versions matches your claim?",
-                        message_id,
+                        phone_number=phone_number,
+                        message=tailored_response,
+                        reply_to=message_id,
                     )
 
-                    # Send each suggestion as separate message
-                    for idx, suggestion in enumerate(suggestions[:3], 1):
-                        # Remove numbering and extra spaces
-                        clean_suggestion = re.sub(
-                            r"^\d+\.\s*", "", suggestion
-                        ).strip()
-                        await send_whatsapp_message(
-                            phone_number,
-                            f"{idx}. {clean_suggestion}",
-                            message_id,
-                        )
-                        await asyncio.sleep(1)  # Brief pause between messages
-
-                    success = True
+                    success = True  # Mark success if we get through
                     continue
+
+                # # If no claims found, try lower threshold once
+                # if not claims and retry_count == 0:
+                #     claims = await contextualize_user_input(message_text)
+                #     retry_count += 1
+                #     continue
+
+                # if not claims:
+                #     # New improved prompt for claim suggestions
+                #     prompt = f"""🔍 **Claim Suggestion Assistant** 🔍
+                #     User input: {message_text}
+                #     Language: {detect(message_text)}
+
+                #     Generate exactly 3 claims following this format, avoiding statistics, specific institutions, or named regions:
+                #         [General subject] + [Non-numerical effect/action] + [Vague timeframe/context]
+                #         [Alternative angle] + [Qualitative impact] + [Broad geographic scope]
+                #         [Distinct aspect] + [Relative comparison] + [Generalized authority]
+
+                #     Rules:
+                #     - Each claim must be standalone and copy-paste ready
+                #     - Never invent information, articles or statistics
+
+                #     Language Rules:
+                #         🌍 Always respond in the original language of the claim
+                #         💬 Maintain colloquial expressions from the users language
+                #         🚫 Never mix languages in response"""
+
+                #     tailored_response = await generate(prompt)
+
+                #     # Split the response into individual claims
+                #     suggestions = [
+                #         line.strip()
+                #         for line in tailored_response.split("\n")
+                #         if line.strip().startswith(("1.", "2.", "3."))
+                #     ]
+
+                #     # Send initial message
+                #     await send_whatsapp_message(
+                #         phone_number,
+                #         '🔍 Let\'s clarify! Which of these specific versions matches your claim?',
+                #         message_id,
+                #     )
+
+                #     # Send each suggestion as separate message
+                #     for idx, suggestion in enumerate(suggestions[:3], 1):
+                #         # Remove numbering and extra spaces
+                #         clean_suggestion = re.sub(
+                #             r"^\d+\.\s*", "", suggestion
+                #         ).strip()
+                #         await send_whatsapp_message(
+                #             phone_number,
+                #             f"{idx}. {clean_suggestion}",
+                #             message_id,
+                #         )
+                #         await asyncio.sleep(1)  # Brief pause between messages
+
+                #     success = True
+                #     continue
 
                 # Step 4-6: Fact check with proper URL handling
-                fact_results = await fact_check(claims=claims, text="", url=url)
+                if url:
+                    fact_results = await fact_check(claims=claims, url=url)
+                    relevant_results = clean_facts(fact_results)
+                else:
+                    # For stance detection, process one claim at a time
+                    relevant_results = []
+                    for claim in claims:
+                        fact_result = await stance_detection(claim)
+                        result = clean_facts(fact_result)
+                        relevant_results.extend(result)
 
-                relevant_results = clean_facts(fact_results)
+                print(relevant_results)
 
                 # Step 7: Generate tailored response
                 tailored_response = await process_claim_group(
-                    relevant_results
+                    relevant_results, message_text
                 )
 
                 # Step 8: Send comprehensive response
