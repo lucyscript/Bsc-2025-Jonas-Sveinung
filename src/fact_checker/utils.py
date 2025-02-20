@@ -21,8 +21,10 @@ API_BASE_URL = os.getenv("FACTIVERSE_API_URL", "https://dev.factiverse.ai/v1")
 REQUEST_TIMEOUT = 10  # seconds
 
 
-async def generate(prompt: str, text="") -> str:
+async def generate(prompt: str, text: str = "") -> str:
     """Generate context for a given claim using Factiverse API."""
+    print(text)
+
     payload = {
         "logging": False,
         "text": text,
@@ -294,9 +296,12 @@ def clean_facts(json_data: dict) -> list:
                 ),
                 "url": evidence.get("url", ""),
                 "evidence_snippet": (
-                    evidence.get("evidenceSnippet", "")[:1000] + "..."
+                    evidence.get("evidenceSnippet", "").replace('"', "'")[
+                        :1000
+                    ]  # Replace FIRST before truncating
+                    + "..."
                     if len(evidence.get("evidenceSnippet", "")) > 1000
-                    else evidence.get("evidenceSnippet", "")
+                    else evidence.get("evidenceSnippet", "").replace('"', "'")
                 ),
             }
 
@@ -354,9 +359,14 @@ def clean_facts(json_data: dict) -> list:
                     ),
                     "url": evidence.get("url", ""),
                     "evidence_snippet": (
-                        evidence.get("evidenceSnippet", "")[:1000] + "..."
+                        evidence.get("evidenceSnippet", "")[:1000].replace(
+                            '"', "'"
+                        )
+                        + "..."
                         if len(evidence.get("evidenceSnippet", "")) > 1000
-                        else evidence.get("evidenceSnippet", "")
+                        else evidence.get("evidenceSnippet", "").replace(
+                            '"', "'"
+                        )
                     ),
                 }
 
@@ -378,7 +388,9 @@ def clean_facts(json_data: dict) -> list:
     return cleaned_results
 
 
-async def generate_response(evidence: list, message: str) -> str:
+async def generate_response(
+    evidence: list, message: str, context: str = ""
+) -> str:
     """Process a single claim group through the generation pipeline."""
     try:
         message_text = message.strip()
@@ -387,14 +399,23 @@ async def generate_response(evidence: list, message: str) -> str:
 
         if not claims:
             response_prompt = get_prompt(
-                "no_claims_response", lang=lang, message_text=message_text
+                "no_claims_response",
+                lang=lang,
+                message_text=message_text,
+                context=context,
             )
             return await generate(response_prompt)
 
         response_prompt = get_prompt(
-            "claims_response", lang=lang, message_text=message_text
+            "claims_response",
+            lang=lang,
+            message_text=message_text,
+            context=context,
         )
-        return await generate(response_prompt, evidence)
+
+        # Add JSON serialization with proper quote handling here
+        evidence_text = json.dumps(evidence, ensure_ascii=False)
+        return await generate(response_prompt, evidence_text)
 
     except Exception as e:
         print(f"Group processing failed: {str(e)}")

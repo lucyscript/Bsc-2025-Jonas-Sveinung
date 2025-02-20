@@ -4,10 +4,8 @@ import asyncio
 import logging
 import os
 import re
-from contextlib import suppress
-from typing import Set
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from src.fact_checker.utils import (
@@ -25,8 +23,7 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
-# Track processed message IDs (use Redis in production)
-processed_ids: Set[str] = set()
+message_context: dict[str, list[str]] = {}  # Replace processed_ids with context
 
 
 @router.get("/webhook")
@@ -44,8 +41,8 @@ async def verify_webhook(request: Request):
 
 
 @router.post("/webhook")
-async def receive_message(request: Request):
-    """Process incoming WhatsApp messages with deduplication."""
+async def receive_message(request: Request, background_tasks: BackgroundTasks):
+    """Process incoming WhatsApp messages with context tracking."""
     try:
         payload = await request.json()
 
@@ -56,46 +53,40 @@ async def receive_message(request: Request):
             for change in entry.get("changes", []):
                 message_data = change.get("value", {})
                 messages = message_data.get("messages", [])
+                contacts = message_data.get("contacts", [])
 
-                if not messages:
+                if not messages or not contacts:
                     continue
 
-                message = messages[0]
-                message_id = message.get("id", "")
-
-                # Deduplication check
-                if message_id in processed_ids:
-                    logger.info(f"Duplicate message {message_id} received")
-                    return {"status": "duplicate_ignored"}
-
-                processed_ids.add(message_id)
                 try:
-                    await process_message(message_data)
-                finally:
-                    with suppress(KeyError):
-                        processed_ids.remove(message_id)
+                    message = messages[0]
+                    contact = contacts[0]
+                    message_text = message.get("text", {}).get("body", "")
+                    phone_number = contact.get("wa_id", "")
+                    message_id = message.get("id", "")
 
-        return {"status": "processed"}
+                    # Update message context
+                    if phone_number not in message_context:
+                        message_context[phone_number] = []
+                    message_context[phone_number].append(message_text)
+                    context = "\n".join(
+                        message_context[phone_number][:-1]
+                    )  # Exclude current message
+                    print(context)
+                except (KeyError, IndexError):
+                    continue
+
+                # Submit to background task instead of processing directly
+                background_tasks.add_task(
+                    process_message,
+                    phone_number,
+                    message_id,
+                    message_text,
+                    context,  # Pass context to processing
+                )
+        return {"status": "received"}
     except Exception:
         raise HTTPException(500, detail="Message processing error")
-
-
-async def process_message(message_data: dict):
-    """Separated message processing logic."""
-    try:
-        messages = message_data.get("messages", [])
-        contacts = message_data.get("contacts", [])
-
-        try:
-            message = messages[0]
-            contact = contacts[0]
-            message_text = message.get("text", {}).get("body", "")
-            phone_number = contact.get("wa_id", "")
-            message_id = message.get("id", "")
-        except (KeyError, IndexError):
-            return
-
-        # When context is added, run this on first contact:
 
         #     if user sent its first message:
         #     prompt = get_prompt(
@@ -137,6 +128,12 @@ async def process_message(message_data: dict):
         #     success = True
         #     continue
 
+
+async def process_message(
+    phone_number: str, message_id: str, message_text: str, context: str
+):
+    """Updated processing with context handling."""
+    try:
         # Extract URL from message text using regex
         url_match = re.search(r"https?://\S+", message_text)
         url = url_match.group(0) if url_match else ""
@@ -151,9 +148,11 @@ async def process_message(message_data: dict):
                 # Detect claims with improved retry
                 claims = await detect_claims(message_text)
 
+                print(claims)
+
                 if not claims:
                     tailored_response = await generate_response(
-                        claims, message_text
+                        claims, message_text, context
                     )
 
                     await send_whatsapp_message(
@@ -177,10 +176,8 @@ async def process_message(message_data: dict):
                         result = clean_facts(fact_result)
                         relevant_results.extend(result)
 
-                print(relevant_results)
-
                 tailored_response = await generate_response(
-                    relevant_results, message_text
+                    relevant_results, message_text, context
                 )
 
                 await send_whatsapp_message(
@@ -207,5 +204,10 @@ async def process_message(message_data: dict):
                     )
                     await asyncio.sleep(2**retry_count)  # Exponential backoff
 
-    except Exception:
-        raise HTTPException(500, detail="Message processing error")
+    except Exception as e:
+        logger.error(f"Background task failed: {str(e)}")
+        await send_whatsapp_message(
+            phone_number,
+            "⚠️ We're experiencing high demand. Please try again later!",
+            message_id,
+        )
