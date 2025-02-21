@@ -10,7 +10,6 @@ def load_config():
     if not database_url:
         raise ValueError("DATABASE_URL environment variable not set.")
 
-    # Parse the database URL
     result = urlparse(database_url)
     config = {
         "host": result.hostname,
