@@ -36,7 +36,7 @@ def test_verify_webhook_success(monkeypatch):
     import src.whatsapp.routers as routes
 
     importlib.reload(routes)
-    routes.VERIFY_TOKEN = test_token  
+    routes.VERIFY_TOKEN = test_token
     app.router.routes = []
     app.include_router(routes.router)
 

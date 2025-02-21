@@ -23,7 +23,7 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
-message_context: dict[str, list[str]] = {} 
+message_context: dict[str, list[str]] = {}
 
 
 @router.get("/webhook")
@@ -170,9 +170,8 @@ async def process_message(
             message_id,
         )
 
-
         # Bot suggesting claims for the user:
-        
+
         #     if user sent its first message:
         #     prompt = get_prompt(
         #         'claim_suggestion',
