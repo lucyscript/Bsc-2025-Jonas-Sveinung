@@ -8,6 +8,10 @@ import time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+import pytesseract
+from PIL import Image
+from io import BytesIO
+import httpx
 
 from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
@@ -17,6 +21,12 @@ from src.fact_checker.utils import (
     generate_response,
     stance_detection,
 )
+from src.image.utils import (
+    get_image_url,
+    download_image,
+    extract_text_from_image
+)
+
 from src.whatsapp.utils import send_whatsapp_message
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
@@ -64,20 +74,16 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     message = messages[0]
                     contact = contacts[0]
                     message_type = message.get("type")
-                    message_text = message.get("text", {}).get("body", "")
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
 
-                    if phone_number not in message_context:
-                        message_context[phone_number] = []
-
+                    # Handle different message types
                     if message_type == "text":
+                        message_text = message.get("text", {}).get("body", "")
+                        if phone_number not in message_context:
+                            message_context[phone_number] = []
                         message_context[phone_number].append(message_text)
-                        context = "\n".join(
-                            message_context[phone_number][:-1]
-                        )  # Exclude current message
-                        print(context)
-
+                        context = "\n".join(message_context[phone_number][:-1])
                         background_tasks.add_task(
                             process_message,
                             phone_number,
@@ -104,6 +110,29 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                 process_reaction,
                                 emoji,
                             )
+
+                    elif message_type == "image":
+                        image_data = message.get("image", {})
+                        image_id = image_data.get("id")
+                        if image_id:
+                            background_tasks.add_task(
+                                process_image,
+                                phone_number,
+                                message_id,
+                                image_id,
+                            )
+                        else:
+                            await send_whatsapp_message(
+                                phone_number,
+                                "No image ID found. Please try again.",
+                                message_id,
+                            )
+                    else:
+                        await send_whatsapp_message(
+                            phone_number,
+                            "Sorry, I can only process text and image messages.",
+                            message_id,
+                        )
 
                 except (KeyError, IndexError):
                     continue
@@ -196,6 +225,65 @@ async def process_message(
             message_id,
         )
 
+async def process_reaction(
+    emoji,
+):
+    """Handles reaction processing asynchronously."""
+    conn = None
+    print(f"Received reaction: {emoji}")
+    try:
+        conn = connect()
+        timestamp = int(time.time())
+        insert_feedback(conn, emoji, timestamp)
+        print(f"Received reaction: {emoji}")
+    except Exception as e:
+        logger.error(f"Error processing reaction: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+async def process_image(phone_number: str, message_id: str, image_id: str):
+    """Process image messages by extracting text using OCR and fact-checking."""
+    try:
+        # Get image URL and download it
+        image_url = await get_image_url(image_id)
+        image_bytes = await download_image(image_url)
+
+        # Extract text using OCR
+        extracted_text = extract_text_from_image(image_bytes)
+
+        if not extracted_text.strip():
+            await send_whatsapp_message(
+                phone_number,
+                "No text found in the image.",
+                message_id,
+            )
+            return
+
+        # Process the extracted text
+        if phone_number not in message_context:
+            message_context[phone_number] = []
+        message_context[phone_number].append(extracted_text)
+        context = "\n".join(message_context[phone_number][:-1])
+
+        # Process the text like a normal message
+        await process_message(
+            phone_number,
+            message_id,
+            extracted_text,
+            context,
+        )
+
+    except Exception as e:
+        logger.error(f"Image processing failed: {str(e)}")
+        await send_whatsapp_message(
+            phone_number,
+            "Failed to process the image. Please try again.",
+            message_id,
+        )
+
+
+
         # Bot suggesting claims for the user:
 
         #     if user sent its first message:
@@ -237,21 +325,3 @@ async def process_message(
 
         #     success = True
         #     continue
-
-
-async def process_reaction(
-    emoji,
-):
-    """Handles reaction processing asynchronously."""
-    conn = None
-    print(f"Received reaction: {emoji}")
-    try:
-        conn = connect()
-        timestamp = int(time.time())
-        insert_feedback(conn, emoji, timestamp)
-        print(f"Received reaction: {emoji}")
-    except Exception as e:
-        logger.error(f"Error processing reaction: {e}")
-    finally:
-        if conn:
-            conn.close()
