@@ -1,6 +1,7 @@
 black
 ruff
 langdetect
+pytesseract
 pytest
 pytest-cov
 mypy
