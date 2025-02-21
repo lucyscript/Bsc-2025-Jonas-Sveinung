@@ -59,23 +59,21 @@ async def generate(prompt: str, text: str = "") -> str:
         raise
 
 
-async def stance_detection(claim: str):
+async def stance_detection(text: str):
     """Check factual accuracy of a text using Factiverse API.
 
     Args:
-        claim: Claim to fact check
-        text: Text content to fact check
-        url: Optional source URL of the content
+        text: Text to check for claims
 
     Returns:
-        FactCheckResult containing verdict and supporting evidence
+        Claims detected in the text
 
     Raises:
         HTTPException: When API call fails or service is unavailable
     """
     payload = {
         "logging": False,
-        "claim": claim,
+        "claim": text,
     }
 
     headers = {
