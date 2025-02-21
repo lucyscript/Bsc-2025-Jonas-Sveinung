@@ -15,7 +15,7 @@ load_dotenv()
 
 API_BASE_URL = "https://dev.factiverse.ai/v1"
 FACTIVERSE_API_TOKEN = os.getenv("FACTIVERSE_API_TOKEN")
-REQUEST_TIMEOUT = 10  
+REQUEST_TIMEOUT = 10
 
 
 async def generate(prompt: str, text: str = "") -> str:
@@ -155,7 +155,7 @@ async def fact_check(claims: list[str], url: str = ""):
     }
 
     max_retries = 3
-    retry_delay = 1  
+    retry_delay = 1
 
     for attempt in range(max_retries + 1):
         try:
@@ -248,7 +248,7 @@ async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
 
 def clean_facts(json_data: dict | None) -> list:
     """Extract relevant fact-check results with dynamic evidence balancing."""
-    cleaned_results = []
+    cleaned_results: list[dict] = []
 
     if json_data is None:
         return cleaned_results
@@ -291,9 +291,7 @@ def clean_facts(json_data: dict | None) -> list:
                 ),
                 "url": evidence.get("url", ""),
                 "evidence_snippet": (
-                    evidence.get("evidenceSnippet", "").replace('"', "'")[
-                        :1000
-                    ]
+                    evidence.get("evidenceSnippet", "").replace('"', "'")[:1000]
                     + "..."
                     if len(evidence.get("evidenceSnippet", "")) > 1000
                     else evidence.get("evidenceSnippet", "").replace('"', "'")
