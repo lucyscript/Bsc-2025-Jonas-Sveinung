@@ -11,14 +11,11 @@ from langdetect import detect
 
 from src.config.prompts import get_prompt
 
-# Load environment variables
 load_dotenv()
 
-# Configuration
+API_BASE_URL = "https://dev.factiverse.ai/v1"
 FACTIVERSE_API_TOKEN = os.getenv("FACTIVERSE_API_TOKEN")
-
-API_BASE_URL = os.getenv("FACTIVERSE_API_URL", "https://dev.factiverse.ai/v1")
-REQUEST_TIMEOUT = 10  # seconds
+REQUEST_TIMEOUT = 10  
 
 
 async def generate(prompt: str, text: str = "") -> str:
@@ -87,7 +84,7 @@ async def stance_detection(claim: str):
     }
 
     max_retries = 3
-    retry_delay = 1  # Initial delay in seconds
+    retry_delay = 1
 
     for attempt in range(max_retries + 1):
         try:
@@ -128,7 +125,6 @@ async def stance_detection(claim: str):
                 detail=f"Service temporarily unavailable: {str(e)}",
             )
 
-    # This return is theoretically unreachable but satisfies type checker
     return None
 
 
@@ -159,7 +155,7 @@ async def fact_check(claims: list[str], url: str = ""):
     }
 
     max_retries = 3
-    retry_delay = 1  # Initial delay in seconds
+    retry_delay = 1  
 
     for attempt in range(max_retries + 1):
         try:
@@ -200,7 +196,6 @@ async def fact_check(claims: list[str], url: str = ""):
                 detail=f"Service temporarily unavailable: {str(e)}",
             )
 
-    # This return is theoretically unreachable but satisfies type checker
     return None
 
 
@@ -232,7 +227,6 @@ async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
             claims_data = response.json()
             claims = []
 
-            # Directly extract from top-level detectedClaims
             if "detectedClaims" in claims_data:
                 for claim in claims_data["detectedClaims"]:
                     claim_text = str(claim.get("claim", "")).strip()
@@ -252,11 +246,13 @@ async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
         return []
 
 
-def clean_facts(json_data: dict) -> list:
+def clean_facts(json_data: dict | None) -> list:
     """Extract relevant fact-check results with dynamic evidence balancing."""
     cleaned_results = []
 
-    # Handle stance detection response
+    if json_data is None:
+        return cleaned_results
+
     if (
         "collection" in json_data
         and json_data["collection"] == "stance_detection"
@@ -273,7 +269,6 @@ def clean_facts(json_data: dict) -> list:
                 else "Correct"
             )
 
-        # Process confidence with proper rounding
         if final_verdict == "Incorrect":
             confidence = round(
                 (1 - (json_data.get("finalScore") or 0)) * 100, 2
@@ -298,7 +293,7 @@ def clean_facts(json_data: dict) -> list:
                 "evidence_snippet": (
                     evidence.get("evidenceSnippet", "").replace('"', "'")[
                         :1000
-                    ]  # Replace FIRST before truncating
+                    ]
                     + "..."
                     if len(evidence.get("evidenceSnippet", "")) > 1000
                     else evidence.get("evidenceSnippet", "").replace('"', "'")
@@ -320,10 +315,8 @@ def clean_facts(json_data: dict) -> list:
             }
         )
 
-    # Handle fact check response (existing logic)
     else:
         for claim in json_data.get("claims", []):
-            # Extract core claim information with null checks
             claim_text = claim.get("claim", "")
             final_prediction = claim.get("finalPrediction")
             final_verdict = "Uncertain"
@@ -341,11 +334,9 @@ def clean_facts(json_data: dict) -> list:
                     ((json_data.get("finalScore") or 0)) * 100, 2
                 )
 
-            # Process evidence with empty list handling
             supporting_evidence = []
             refuting_evidence = []
 
-            # Handle null/empty evidence list
             evidence_list = claim.get("evidence") or []
             for evidence in evidence_list:
                 label = evidence.get("labelDescription", "")
@@ -413,7 +404,7 @@ async def generate_response(
             context=context,
         )
 
-        # Add JSON serialization with proper quote handling here
+        # JSON serialization with proper quote handling
         evidence_text = json.dumps(evidence, ensure_ascii=False)
         return await generate(response_prompt, evidence_text)
 
