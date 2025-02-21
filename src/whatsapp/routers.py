@@ -23,7 +23,7 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
-message_context: dict[str, list[str]] = {}  # Replace processed_ids with context
+message_context: dict[str, list[str]] = {} 
 
 
 @router.get("/webhook")
@@ -65,7 +65,6 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
 
-                    # Update message context
                     if phone_number not in message_context:
                         message_context[phone_number] = []
                     message_context[phone_number].append(message_text)
@@ -76,57 +75,16 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                 except (KeyError, IndexError):
                     continue
 
-                # Submit to background task instead of processing directly
                 background_tasks.add_task(
                     process_message,
                     phone_number,
                     message_id,
                     message_text,
-                    context,  # Pass context to processing
+                    context,
                 )
         return {"status": "received"}
     except Exception:
         raise HTTPException(500, detail="Message processing error")
-
-        #     if user sent its first message:
-        #     prompt = get_prompt(
-        #         'claim_suggestion',
-        #         message_text=message_text,
-        #         lang=detect(message_text)
-        #         )
-
-        #     tailored_response = await generate(prompt)
-
-        #     # Split the response into individual claims
-        #     suggestions = [
-        #         line.strip()
-        #         for line in tailored_response.split("\n")
-        #         if line.strip().startswith(("1.", "2.", "3."))
-        #     ]
-
-        #     # Send initial message
-        #     await send_whatsapp_message(
-        #         phone_number,
-        #         '🔍 Let\'s clarify! Which of these specific versions '
-        #         'matches your claim?',
-        #         message_id,
-        #     )
-
-        #     # Send each suggestion as separate message
-        #     for idx, suggestion in enumerate(suggestions[:3], 1):
-        #         # Remove numbering and extra spaces
-        #         clean_suggestion = re.sub(
-        #             r"^\d+\.\s*", "", suggestion
-        #         ).strip()
-        #         await send_whatsapp_message(
-        #             phone_number,
-        #             f"{idx}. {clean_suggestion}",
-        #             message_id,
-        #         )
-        #         await asyncio.sleep(1)  # Brief pause between messages
-
-        #     success = True
-        #     continue
 
 
 async def process_message(
@@ -138,7 +96,7 @@ async def process_message(
         url_match = re.search(r"https?://\S+", message_text)
         url = url_match.group(0) if url_match else ""
 
-        # Enhanced processing flow with retry logic
+        # Processing flow with retry logic
         max_retries = 3
         retry_count = 0
         success = False
@@ -211,3 +169,46 @@ async def process_message(
             "⚠️ We're experiencing high demand. Please try again later!",
             message_id,
         )
+
+
+        # Bot suggesting claims for the user:
+        
+        #     if user sent its first message:
+        #     prompt = get_prompt(
+        #         'claim_suggestion',
+        #         message_text=message_text,
+        #         lang=detect(message_text)
+        #         )
+
+        #     tailored_response = await generate(prompt)
+
+        #     # Split the response into individual claims
+        #     suggestions = [
+        #         line.strip()
+        #         for line in tailored_response.split("\n")
+        #         if line.strip().startswith(("1.", "2.", "3."))
+        #     ]
+
+        #     # Send initial message
+        #     await send_whatsapp_message(
+        #         phone_number,
+        #         '🔍 Let\'s clarify! Which of these specific versions '
+        #         'matches your claim?',
+        #         message_id,
+        #     )
+
+        #     # Send each suggestion as separate message
+        #     for idx, suggestion in enumerate(suggestions[:3], 1):
+        #         # Remove numbering and extra spaces
+        #         clean_suggestion = re.sub(
+        #             r"^\d+\.\s*", "", suggestion
+        #         ).strip()
+        #         await send_whatsapp_message(
+        #             phone_number,
+        #             f"{idx}. {clean_suggestion}",
+        #             message_id,
+        #         )
+        #         await asyncio.sleep(1)  # Brief pause between messages
+
+        #     success = True
+        #     continue
