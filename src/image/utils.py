@@ -1,15 +1,15 @@
 """Image utility for extracting image data."""
 
-import os
-import httpx
 import logging
+import os
+from io import BytesIO
 
+import httpx
 import pytesseract
 from PIL import Image
-from io import BytesIO
-import httpx
 
 logger = logging.getLogger(__name__)
+
 
 async def get_image_url(image_id: str) -> str:
     """Retrieve the image URL from WhatsApp API."""
@@ -22,6 +22,7 @@ async def get_image_url(image_id: str) -> str:
         response.raise_for_status()
         return response.json().get("url")
 
+
 async def download_image(image_url: str) -> bytes:
     """Download the image from the provided URL."""
     headers = {
@@ -31,6 +32,7 @@ async def download_image(image_url: str) -> bytes:
         response = await client.get(image_url, headers=headers)
         response.raise_for_status()
         return response.content
+
 
 def extract_text_from_image(image_bytes: bytes) -> str:
     """Extract text from image using OCR."""

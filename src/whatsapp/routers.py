@@ -8,10 +8,6 @@ import time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-import pytesseract
-from PIL import Image
-from io import BytesIO
-import httpx
 
 from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
@@ -22,11 +18,10 @@ from src.fact_checker.utils import (
     stance_detection,
 )
 from src.image.utils import (
-    get_image_url,
     download_image,
-    extract_text_from_image
+    extract_text_from_image,
+    get_image_url,
 )
-
 from src.whatsapp.utils import send_whatsapp_message
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
@@ -130,7 +125,8 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     else:
                         await send_whatsapp_message(
                             phone_number,
-                            "Sorry, I can only process text and image messages.",
+                            "Sorry, I can only process "
+                            "text and image messages.",
                             message_id,
                         )
 
@@ -225,6 +221,7 @@ async def process_message(
             message_id,
         )
 
+
 async def process_reaction(
     emoji,
 ):
@@ -241,6 +238,7 @@ async def process_reaction(
     finally:
         if conn:
             conn.close()
+
 
 async def process_image(phone_number: str, message_id: str, image_id: str):
     """Process image messages by extracting text using OCR and fact-checking."""
@@ -281,8 +279,6 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
             "Failed to process the image. Please try again.",
             message_id,
         )
-
-
 
         # Bot suggesting claims for the user:
 
