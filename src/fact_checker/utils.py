@@ -59,21 +59,21 @@ async def generate(prompt: str, text: str = "") -> str:
         raise
 
 
-async def stance_detection(text: str):
+async def stance_detection(claim: str):
     """Check factual accuracy of a text using Factiverse API.
 
     Args:
-        text: Text to check for claims
+        claim: Claim to check for stance detection
 
     Returns:
-        Claims detected in the text
+        FactCheckResult containing verdict and supporting evidence
 
     Raises:
         HTTPException: When API call fails or service is unavailable
     """
     payload = {
         "logging": False,
-        "claim": text,
+        "claim": claim,
     }
 
     headers = {
@@ -198,7 +198,18 @@ async def fact_check(claims: list[str], url: str = ""):
 
 
 async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
-    """Detect individual claims in text using Factiverse API."""
+    """Detect individual claims in text using Factiverse API.
+
+    Args:
+        text: Text to check for claims
+        threshold: Minimum confidence threshold for claims
+
+    Returns:
+        Claims detected in the text
+
+    Raises:
+        HTTPException: When API call fails or service is unavailable
+    """
     lang = detect(text)
 
     payload = {
@@ -272,7 +283,7 @@ def clean_facts(json_data: dict | None) -> list:
                 (1 - (json_data.get("finalScore") or 0)) * 100, 2
             )
         else:
-            confidence = round(((json_data.get("finalScore") or 0)) * 100, 2)
+            confidence = round((json_data.get("finalScore") or 0) * 100, 2)
 
         supporting_evidence = []
         refuting_evidence = []
@@ -326,9 +337,7 @@ def clean_facts(json_data: dict | None) -> list:
                     (1 - (json_data.get("finalScore") or 0)) * 100, 2
                 )
             else:
-                confidence = round(
-                    ((json_data.get("finalScore") or 0)) * 100, 2
-                )
+                confidence = round((json_data.get("finalScore") or 0) * 100, 2)
 
             supporting_evidence = []
             refuting_evidence = []
