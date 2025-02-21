@@ -391,7 +391,7 @@ async def generate_response(
     try:
         message_text = message.strip()
         claims = [entry["claim"] for entry in evidence]
-        lang = detect(claims[0]) if claims else "en"
+        lang = detect(claims[0]) if claims else detect(message_text)
 
         if not claims:
             response_prompt = get_prompt(

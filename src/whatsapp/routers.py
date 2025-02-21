@@ -253,7 +253,8 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
         if not extracted_text.strip():
             await send_whatsapp_message(
                 phone_number,
-                "No text found in the image.",
+                "I can only understand text in images...\n "
+                "No text was found in this one.",
                 message_id,
             )
             return
