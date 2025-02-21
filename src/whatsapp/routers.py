@@ -4,10 +4,12 @@ import asyncio
 import logging
 import os
 import re
+import time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
+from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
     clean_facts,
     detect_claims,
@@ -61,27 +63,51 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                 try:
                     message = messages[0]
                     contact = contacts[0]
+                    message_type = message.get("type")
                     message_text = message.get("text", {}).get("body", "")
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
 
                     if phone_number not in message_context:
                         message_context[phone_number] = []
-                    message_context[phone_number].append(message_text)
-                    context = "\n".join(
-                        message_context[phone_number][:-1]
-                    )  # Exclude current message
-                    print(context)
+
+                    if message_type == "text":
+                        message_context[phone_number].append(message_text)
+                        context = "\n".join(
+                            message_context[phone_number][:-1]
+                        )  # Exclude current message
+                        print(context)
+
+                        background_tasks.add_task(
+                            process_message,
+                            phone_number,
+                            message_id,
+                            message_text,
+                            context,
+                        )
+
+                    elif message_type == "reaction":
+                        # Handle reactions
+                        reaction = message.get("reaction")
+                        emoji = reaction.get("emoji")
+                        id_reacted_to = reaction.get("message_id")
+
+                        message_context[phone_number].append(
+                            f"Reaction: {emoji} on message {id_reacted_to}"
+                        )
+                        print(
+                            f"Reaction context: {message_context[phone_number]}"
+                        )
+
+                        if emoji == "👍" or emoji == "👎":
+                            background_tasks.add_task(
+                                process_reaction,
+                                emoji,
+                            )
+
                 except (KeyError, IndexError):
                     continue
 
-                background_tasks.add_task(
-                    process_message,
-                    phone_number,
-                    message_id,
-                    message_text,
-                    context,
-                )
         return {"status": "received"}
     except Exception:
         raise HTTPException(500, detail="Message processing error")
@@ -211,3 +237,21 @@ async def process_message(
 
         #     success = True
         #     continue
+
+
+async def process_reaction(
+    emoji,
+):
+    """Handles reaction processing asynchronously."""
+    conn = None
+    print(f"Received reaction: {emoji}")
+    try:
+        conn = connect()
+        timestamp = int(time.time())
+        insert_feedback(conn, emoji, timestamp)
+        print(f"Received reaction: {emoji}")
+    except Exception as e:
+        logger.error(f"Error processing reaction: {e}")
+    finally:
+        if conn:
+            conn.close()
