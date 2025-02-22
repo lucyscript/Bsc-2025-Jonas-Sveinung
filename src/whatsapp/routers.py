@@ -332,6 +332,7 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
             message_id,
         )
 
+
 async def process_selected_claim(
     phone_number: str, message_id: str, claim: str, context: str
 ):
