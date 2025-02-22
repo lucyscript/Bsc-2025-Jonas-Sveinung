@@ -8,12 +8,15 @@ import time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from langdetect import detect
 
+from src.config.prompts import get_prompt
 from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
     clean_facts,
     detect_claims,
     fact_check,
+    generate,
     generate_response,
     stance_detection,
 )
@@ -31,6 +34,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 message_context: dict[str, list[str]] = {}
+message_id_to_claim: dict[str, str] = {}
 
 
 @router.get("/webhook")
@@ -72,9 +76,30 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
 
-                    # Handle different message types
                     if message_type == "text":
                         message_text = message.get("text", {}).get("body", "")
+                        context_info = message.get("context", {})
+
+                        if context_info:
+                            message_context[phone_number].append(message_text)
+                            context = "\n".join(
+                                message_context[phone_number][:-1]
+                            )
+                            replied_to_id = context_info.get("id")
+                            if replied_to_id in message_id_to_claim:
+                                selected_claim = message_id_to_claim[
+                                    replied_to_id
+                                ]
+                                background_tasks.add_task(
+                                    process_selected_claim,
+                                    phone_number,
+                                    message_id,
+                                    selected_claim,
+                                    context,
+                                )
+                                del message_id_to_claim[replied_to_id]
+                                continue
+
                         if phone_number not in message_context:
                             message_context[phone_number] = []
                         message_context[phone_number].append(message_text)
@@ -88,7 +113,6 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         )
 
                     elif message_type == "reaction":
-                        # Handle reactions
                         reaction = message.get("reaction")
                         emoji = reaction.get("emoji")
                         id_reacted_to = reaction.get("message_id")
@@ -143,25 +167,38 @@ async def process_message(
 ):
     """Updated processing with context handling."""
     try:
-        # Extract URL from message text using regex
         url_match = re.search(r"https?://\S+", message_text)
         url = url_match.group(0) if url_match else ""
 
-        # Processing flow with retry logic
         max_retries = 3
         retry_count = 0
         success = False
 
         while not success and retry_count < max_retries:
             try:
-                # Detect claims with improved retry
                 claims = await detect_claims(message_text)
+                lang = detect(message_text)
 
-                print(claims)
+                print(f"Claims: {claims}")
 
                 if not claims:
                     tailored_response = await generate_response(
                         claims, message_text, context
+                    )
+                    await send_whatsapp_message(
+                        phone_number=phone_number,
+                        message=tailored_response,
+                        reply_to=message_id,
+                    )
+                    success = True
+                    continue
+
+                if url:
+                    fact_results = await fact_check(claims, url)
+                    relevant_results = clean_facts(fact_results)
+
+                    tailored_response = await generate_response(
+                        relevant_results, message_text, context
                     )
 
                     await send_whatsapp_message(
@@ -170,32 +207,48 @@ async def process_message(
                         reply_to=message_id,
                     )
 
-                    success = True  # Mark success if we get through
+                    success = True
+
+                suggestion_prompt = get_prompt(
+                    "claim_suggestion",
+                    message_text=message_text,
+                    lang=lang,
+                    context=context,
+                    user_claims=" ".join(
+                        [f"{i+1}. {claim}" for i, claim in enumerate(claims)]
+                    ),
+                )
+                tailored_response = await generate(suggestion_prompt)
+
+                suggestions = [
+                    re.sub(r"^\d+\.\s*", "", line).strip()
+                    for line in tailored_response.split("\n")
+                    if line.strip().startswith(("1.", "2.", "3."))
+                ][:3]
+
+                if suggestions:
+                    await send_whatsapp_message(
+                        phone_number,
+                        tailored_response,
+                        message_id,
+                    )
+
+                    message_ids = []
+
+                    for idx, suggestion in enumerate(suggestions, 1):
+                        sent_message = await send_whatsapp_message(
+                            phone_number,
+                            f"{idx}. {suggestion}",
+                            message_id,
+                        )
+
+                        if sent_message and "messages" in sent_message:
+                            bot_message_id = sent_message["messages"][0]["id"]
+                            message_id_to_claim[bot_message_id] = suggestion
+                            message_ids.append(bot_message_id)
+
+                    success = True
                     continue
-
-                # Fact check with proper URL handling
-                if url:
-                    fact_results = await fact_check(claims, url)
-                    relevant_results = clean_facts(fact_results)
-                else:
-                    # For stance detection, process one claim at a time
-                    relevant_results = []
-                    for claim in claims:
-                        fact_result = await stance_detection(claim)
-                        result = clean_facts(fact_result)
-                        relevant_results.extend(result)
-
-                tailored_response = await generate_response(
-                    relevant_results, message_text, context
-                )
-
-                await send_whatsapp_message(
-                    phone_number=phone_number,
-                    message=tailored_response,
-                    reply_to=message_id,
-                )
-
-                success = True  # Mark success if we get through
 
             except Exception as e:
                 retry_count += 1
@@ -211,7 +264,9 @@ async def process_message(
                     logger.warning(
                         f"Retry {retry_count}/{max_retries} failed: {str(e)}"
                     )
-                    await asyncio.sleep(2**retry_count)  # Exponential backoff
+                    await asyncio.sleep(2**retry_count)
+
+        success = True
 
     except Exception as e:
         logger.error(f"Background task failed: {str(e)}")
@@ -243,11 +298,9 @@ async def process_reaction(
 async def process_image(phone_number: str, message_id: str, image_id: str):
     """Process image messages by extracting text using OCR and fact-checking."""
     try:
-        # Get image URL and download it
         image_url = await get_image_url(image_id)
         image_bytes = await download_image(image_url)
 
-        # Extract text using OCR
         extracted_text = extract_text_from_image(image_bytes)
 
         if not extracted_text.strip():
@@ -259,13 +312,11 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
             )
             return
 
-        # Process the extracted text
         if phone_number not in message_context:
             message_context[phone_number] = []
         message_context[phone_number].append(extracted_text)
         context = "\n".join(message_context[phone_number][:-1])
 
-        # Process the text like a normal message
         await process_message(
             phone_number,
             message_id,
@@ -281,44 +332,28 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
             message_id,
         )
 
-        # Bot suggesting claims for the user:
 
-        #     if user sent its first message:
-        #     prompt = get_prompt(
-        #         'claim_suggestion',
-        #         message_text=message_text,
-        #         lang=detect(message_text)
-        #         )
+async def process_selected_claim(
+    phone_number: str, message_id: str, claim: str, context: str
+):
+    """Process a single user-selected claim."""
+    try:
+        fact_result = await stance_detection(claim)
+        relevant_results = clean_facts(fact_result)
 
-        #     tailored_response = await generate(prompt)
+        tailored_response = await generate_response(
+            relevant_results, claim, context
+        )
 
-        #     # Split the response into individual claims
-        #     suggestions = [
-        #         line.strip()
-        #         for line in tailored_response.split("\n")
-        #         if line.strip().startswith(("1.", "2.", "3."))
-        #     ]
+        await send_whatsapp_message(
+            phone_number,
+            tailored_response,
+            message_id,
+        )
 
-        #     # Send initial message
-        #     await send_whatsapp_message(
-        #         phone_number,
-        #         '🔍 Let\'s clarify! Which of these specific versions '
-        #         'matches your claim?',
-        #         message_id,
-        #     )
-
-        #     # Send each suggestion as separate message
-        #     for idx, suggestion in enumerate(suggestions[:3], 1):
-        #         # Remove numbering and extra spaces
-        #         clean_suggestion = re.sub(
-        #             r"^\d+\.\s*", "", suggestion
-        #         ).strip()
-        #         await send_whatsapp_message(
-        #             phone_number,
-        #             f"{idx}. {clean_suggestion}",
-        #             message_id,
-        #         )
-        #         await asyncio.sleep(1)  # Brief pause between messages
-
-        #     success = True
-        #     continue
+    except Exception:
+        await send_whatsapp_message(
+            phone_number,
+            "⚠️ Error processing selected claim. Please try again.",
+            message_id,
+        )

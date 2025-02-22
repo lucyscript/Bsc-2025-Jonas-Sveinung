@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 
 import httpx
@@ -17,11 +18,11 @@ API_BASE_URL = "https://dev.factiverse.ai/v1"
 FACTIVERSE_API_TOKEN = os.getenv("FACTIVERSE_API_TOKEN")
 REQUEST_TIMEOUT = 10
 
+logger = logging.getLogger(__name__)
+
 
 async def generate(prompt: str, text: str = "") -> str:
     """Generate context for a given claim using Factiverse API."""
-    print(text)
-
     payload = {
         "logging": False,
         "text": text,
@@ -33,30 +34,34 @@ async def generate(prompt: str, text: str = "") -> str:
         "Content-Type": "application/json",
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.post(
-                f"{API_BASE_URL}/generate",
-                content=json.dumps(payload),
-                headers=headers,
-            )
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                response = await client.post(
+                    f"{API_BASE_URL}/generate",
+                    content=json.dumps(payload),
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response.json().get("full_output", "").replace("**", "*")
 
-            response.raise_for_status()
-            return (
-                response.json()
-                .get("full_output")
-                .replace("**", "*")  # Clean accidental markdown
-            )
+        except httpx.HTTPStatusError as e:
+            if attempt < max_retries and e.response.status_code >= 500:
+                logger.warning(
+                    f"Generate retry {attempt+1}/{max_retries} for 5xx error"
+                )
+                await asyncio.sleep(2**attempt)
+                continue
+            logger.error(f"Generate failed: {e.response.text}")
+            return ""
+        except Exception as e:
+            logger.error(f"Generate error: {str(e)}")
+            if attempt == max_retries:
+                return ""
+            await asyncio.sleep(1)
 
-    except httpx.HTTPStatusError as e:
-        print(
-            f"HTTP Error: {e.request.url} | {e.response.status_code} | "
-            f"{e.response.text}"
-        )
-        raise
-    except Exception as e:
-        print(f"Generate Error: {str(e)}")
-        raise
+    return ""
 
 
 async def stance_detection(claim: str):
@@ -100,9 +105,7 @@ async def stance_detection(claim: str):
                 print(
                     f"Retry attempt {attempt + 1}/{max_retries} for 5xx error"
                 )
-                await asyncio.sleep(
-                    retry_delay * (2**attempt)
-                )  # Exponential backoff
+                await asyncio.sleep(retry_delay * (2**attempt))
                 continue
             raise HTTPException(
                 status_code=e.response.status_code,
@@ -114,9 +117,7 @@ async def stance_detection(claim: str):
                     f"Retry attempt {attempt + 1}/{max_retries} "
                     "for connection error"
                 )
-                await asyncio.sleep(
-                    retry_delay * (2**attempt)
-                )  # Exponential backoff
+                await asyncio.sleep(retry_delay * (2**attempt))
                 continue
             raise HTTPException(
                 status_code=503,
@@ -171,9 +172,7 @@ async def fact_check(claims: list[str], url: str = ""):
                 print(
                     f"Retry attempt {attempt + 1}/{max_retries} for 5xx error"
                 )
-                await asyncio.sleep(
-                    retry_delay * (2**attempt)
-                )  # Exponential backoff
+                await asyncio.sleep(retry_delay * (2**attempt))
                 continue
             raise HTTPException(
                 status_code=e.response.status_code,
@@ -185,9 +184,7 @@ async def fact_check(claims: list[str], url: str = ""):
                     f"Retry attempt {attempt + 1}/{max_retries} for "
                     "connection error"
                 )
-                await asyncio.sleep(
-                    retry_delay * (2**attempt)
-                )  # Exponential backoff
+                await asyncio.sleep(retry_delay * (2**attempt))
                 continue
             raise HTTPException(
                 status_code=503,
@@ -197,7 +194,7 @@ async def fact_check(claims: list[str], url: str = ""):
     return None
 
 
-async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
+async def detect_claims(text: str, threshold: float = 0.75) -> list[str]:
     """Detect individual claims in text using Factiverse API.
 
     Args:
@@ -268,8 +265,9 @@ def clean_facts(json_data: dict | None) -> list:
     ):
         claim_text = json_data.get("claim", "")
         evidence_list = json_data.get("evidence", [])
+        summary = json_data.get("summary", "")
+        fix = json_data.get("fix", "")
 
-        # Determine verdict based on finalPrediction
         final_verdict = "Uncertain"
         if json_data.get("finalPrediction") is not None:
             final_verdict = (
@@ -295,16 +293,11 @@ def clean_facts(json_data: dict | None) -> list:
 
             evidence_entry = {
                 "labelDescription": label,
-                "reliability": evidence.get("domain_reliability", {}).get(
+                "domain_name": evidence.get("domainName", ""),
+                "domainReliability": evidence.get("domain_reliability", {}).get(
                     "Reliability", "Unknown"
                 ),
                 "url": evidence.get("url", ""),
-                "evidence_snippet": (
-                    evidence.get("evidenceSnippet", "").replace('"', "'")[:1000]
-                    + "..."
-                    if len(evidence.get("evidenceSnippet", "")) > 1000
-                    else evidence.get("evidenceSnippet", "").replace('"', "'")
-                ),
             }
 
             if label == "SUPPORTS":
@@ -317,6 +310,8 @@ def clean_facts(json_data: dict | None) -> list:
                 "claim": claim_text,
                 "verdict": final_verdict,
                 "confidence_percentage": confidence,
+                "summary": summary,
+                "fix": fix,
                 "supporting_evidence": supporting_evidence,
                 "refuting_evidence": refuting_evidence,
             }
