@@ -371,8 +371,6 @@ async def process_selected_claim(
 ):
     """Process a single user-selected claim."""
     try:
-        print(context)
-
         fact_result = await stance_detection(claim)
         relevant_results = clean_facts(fact_result)
 
@@ -389,9 +387,10 @@ async def process_selected_claim(
             message_context[phone_number] = []
         message_context[phone_number].append(f"Bot: {tailored_response}\n")
 
-    except Exception:
-        await send_whatsapp_message(
-            phone_number,
-            "⚠️ Error processing selected claim. Please try again.",
-            message_id,
-        )
+    except Exception as e:
+        logger.error(f"Claim processing failed: {str(e)}")
+        error_msg = "⚠️ Error processing selected claim. Please try again."
+        await send_whatsapp_message(phone_number, error_msg, message_id)
+
+        if phone_number in message_context:
+            message_context[phone_number].append(f"Bot: {error_msg}\n")
