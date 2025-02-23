@@ -82,9 +82,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
                         if context_info:
                             message_context[phone_number].append(message_text)
-                            context = "\n".join(
-                                message_context[phone_number][:-1]
-                            )
+                            context = "\n".join(message_context[phone_number])
                             replied_to_id = context_info.get("id")
                             if replied_to_id in message_id_to_claim:
                                 selected_claim = message_id_to_claim[
@@ -97,7 +95,6 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                     selected_claim,
                                     context,
                                 )
-                                del message_id_to_claim[replied_to_id]
                                 continue
 
                         if phone_number not in message_context:
@@ -178,8 +175,6 @@ async def process_message(
             try:
                 claims = await detect_claims(message_text)
                 lang = detect(message_text)
-
-                print(f"Claims: {claims}")
 
                 if not claims:
                     tailored_response = await generate_response(
