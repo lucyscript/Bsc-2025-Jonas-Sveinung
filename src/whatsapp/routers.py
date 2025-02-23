@@ -124,7 +124,8 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         id_reacted_to = reaction.get("message_id")
 
                         message_context[phone_number].append(
-                            f"User reacted with '{emoji}' on message '{id_reacted_to}'\n"
+                            f"User reacted with '{emoji}' "
+                            f"on message '{id_reacted_to}'\n"
                         )
                         if emoji == "👍" or emoji == "👎":
                             background_tasks.add_task(
@@ -332,7 +333,8 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
             if phone_number not in message_context:
                 message_context[phone_number] = []
             message_context[phone_number].append(
-                "Bot: I can only understand text in images...\n No text was found in this one.\n"
+                "Bot: I can only understand text in images...\n "
+                "No text was found in this one.\n"
             )
             return
 
