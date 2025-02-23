@@ -81,13 +81,20 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         context_info = message.get("context", {})
 
                         if context_info:
-                            message_context[phone_number].append(message_text)
-                            context = "\n".join(message_context[phone_number])
                             replied_to_id = context_info.get("id")
                             if replied_to_id in message_id_to_claim:
                                 selected_claim = message_id_to_claim[
                                     replied_to_id
                                 ]
+
+                                message_context[phone_number].append(
+                                    f"User replied to '{selected_claim}' "
+                                    f"with '{message_text}'\n"
+                                )
+                                context = "\n".join(
+                                    message_context[phone_number]
+                                )
+
                                 background_tasks.add_task(
                                     process_selected_claim,
                                     phone_number,
@@ -99,7 +106,9 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
                         if phone_number not in message_context:
                             message_context[phone_number] = []
-                        message_context[phone_number].append(message_text)
+                        message_context[phone_number].append(
+                            f"User: {message_text}\n"
+                        )
                         context = "\n".join(message_context[phone_number][:-1])
                         background_tasks.add_task(
                             process_message,
@@ -115,12 +124,8 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         id_reacted_to = reaction.get("message_id")
 
                         message_context[phone_number].append(
-                            f"Reaction: {emoji} on message {id_reacted_to}"
+                            f"User reacted with '{emoji}' on message '{id_reacted_to}'\n"
                         )
-                        print(
-                            f"Reaction context: {message_context[phone_number]}"
-                        )
-
                         if emoji == "👍" or emoji == "👎":
                             background_tasks.add_task(
                                 process_reaction,
@@ -185,6 +190,11 @@ async def process_message(
                         message=tailored_response,
                         reply_to=message_id,
                     )
+                    if phone_number not in message_context:
+                        message_context[phone_number] = []
+                    message_context[phone_number].append(
+                        f"Bot: {tailored_response}\n"
+                    )
                     success = True
                     continue
 
@@ -201,7 +211,11 @@ async def process_message(
                         message=tailored_response,
                         reply_to=message_id,
                     )
-
+                    if phone_number not in message_context:
+                        message_context[phone_number] = []
+                    message_context[phone_number].append(
+                        f"Bot: {tailored_response}\n"
+                    )
                     success = True
 
                 suggestion_prompt = get_prompt(
@@ -227,6 +241,11 @@ async def process_message(
                         tailored_response,
                         message_id,
                     )
+                    if phone_number not in message_context:
+                        message_context[phone_number] = []
+                    message_context[phone_number].append(
+                        f"Bot: {tailored_response}\n"
+                    )
 
                     message_ids = []
 
@@ -235,6 +254,11 @@ async def process_message(
                             phone_number,
                             f"{idx}. {suggestion}",
                             message_id,
+                        )
+                        if phone_number not in message_context:
+                            message_context[phone_number] = []
+                        message_context[phone_number].append(
+                            f"Bot: {idx}. {suggestion}\n"
                         )
 
                         if sent_message and "messages" in sent_message:
@@ -305,11 +329,18 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
                 "No text was found in this one.",
                 message_id,
             )
+            if phone_number not in message_context:
+                message_context[phone_number] = []
+            message_context[phone_number].append(
+                "Bot: I can only understand text in images...\n No text was found in this one.\n"
+            )
             return
 
         if phone_number not in message_context:
             message_context[phone_number] = []
-        message_context[phone_number].append(extracted_text)
+        message_context[phone_number].append(
+            f"User uploaded an image containing this text: {extracted_text}\n"
+        )
         context = "\n".join(message_context[phone_number][:-1])
 
         await process_message(
@@ -326,6 +357,11 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
             "Failed to process the image. Please try again.",
             message_id,
         )
+        if phone_number not in message_context:
+            message_context[phone_number] = []
+        message_context[phone_number].append(
+            "Bot: Failed to process the image. Please try again.\n"
+        )
 
 
 async def process_selected_claim(
@@ -333,6 +369,8 @@ async def process_selected_claim(
 ):
     """Process a single user-selected claim."""
     try:
+        print(context)
+
         fact_result = await stance_detection(claim)
         relevant_results = clean_facts(fact_result)
 
@@ -345,6 +383,9 @@ async def process_selected_claim(
             tailored_response,
             message_id,
         )
+        if phone_number not in message_context:
+            message_context[phone_number] = []
+        message_context[phone_number].append(f"Bot: {tailored_response}\n")
 
     except Exception:
         await send_whatsapp_message(
