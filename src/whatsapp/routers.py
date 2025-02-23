@@ -8,7 +8,6 @@ import time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from langdetect import detect
 
 from src.config.prompts import get_prompt
 from src.db.utils import connect, insert_feedback
@@ -180,7 +179,6 @@ async def process_message(
         while not success and retry_count < max_retries:
             try:
                 claims = await detect_claims(message_text)
-                lang = detect(message_text)
 
                 if not claims:
                     tailored_response = await generate_response(
@@ -222,7 +220,6 @@ async def process_message(
                 suggestion_prompt = get_prompt(
                     "claim_suggestion",
                     message_text=message_text,
-                    lang=lang,
                     context=context,
                     user_claims=" ".join(
                         [f"{i+1}. {claim}" for i, claim in enumerate(claims)]
