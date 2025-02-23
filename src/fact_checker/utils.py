@@ -8,7 +8,6 @@ import os
 import httpx
 from dotenv import load_dotenv
 from fastapi import HTTPException
-from langdetect import detect
 
 from src.config.prompts import get_prompt
 
@@ -130,7 +129,6 @@ async def fact_check(claims: list[str], url: str = ""):
         "text": "",
         "claims": claims,
         "url": url,
-        "lang": detect(claims[0]),
     }
 
     headers = {
@@ -192,11 +190,9 @@ async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
     Raises:
         HTTPException: When API call fails or service is unavailable
     """
-    lang = detect(text)
 
     payload = {
         "logging": False,
-        "lang": lang,
         "text": text,
         "claimScoreThreshold": threshold,
     }
@@ -371,12 +367,10 @@ async def generate_response(
     try:
         message_text = message.strip()
         claims = [entry["claim"] for entry in evidence]
-        lang = detect(claims[0]) if claims else detect(message_text)
 
         if not claims:
             response_prompt = get_prompt(
                 "no_claims_response",
-                lang=lang,
                 message_text=message_text,
                 context=context,
             )
@@ -384,7 +378,6 @@ async def generate_response(
 
         response_prompt = get_prompt(
             "claims_response",
-            lang=lang,
             message_text=message_text,
             context=context,
         )
