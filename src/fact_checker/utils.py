@@ -34,32 +34,18 @@ async def generate(prompt: str, text: str = "") -> str:
         "Content-Type": "application/json",
     }
 
-    max_retries = 3
-    for attempt in range(max_retries + 1):
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.post(
-                    f"{API_BASE_URL}/generate",
-                    content=json.dumps(payload),
-                    headers=headers,
-                )
-                response.raise_for_status()
-                return response.json().get("full_output", "").replace("**", "*")
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            response = await client.post(
+                f"{API_BASE_URL}/generate",
+                content=json.dumps(payload),
+                headers=headers,
+            )
+            response.raise_for_status()
+            return response.json().get("full_output", "").replace("**", "*")
 
-        except httpx.HTTPStatusError as e:
-            if attempt < max_retries and e.response.status_code >= 500:
-                logger.warning(
-                    f"Generate retry {attempt+1}/{max_retries} for 5xx error"
-                )
-                await asyncio.sleep(2**attempt)
-                continue
-            logger.error(f"Generate failed: {e.response.text}")
-            return ""
-        except Exception as e:
-            logger.error(f"Generate error: {str(e)}")
-            if attempt == max_retries:
-                return ""
-            await asyncio.sleep(1)
+    except Exception as e:
+        logger.error(f"Generate error: {str(e)}")
 
     return ""
 
@@ -77,7 +63,6 @@ async def stance_detection(claim: str):
         HTTPException: When API call fails or service is unavailable
     """
     payload = {
-        "logging": False,
         "claim": claim,
     }
 
@@ -194,7 +179,7 @@ async def fact_check(claims: list[str], url: str = ""):
     return None
 
 
-async def detect_claims(text: str, threshold: float = 0.75) -> list[str]:
+async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
     """Detect individual claims in text using Factiverse API.
 
     Args:
