@@ -190,7 +190,6 @@ async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
     Raises:
         HTTPException: When API call fails or service is unavailable
     """
-
     payload = {
         "logging": False,
         "text": text,
