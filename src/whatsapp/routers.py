@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 message_context: dict[str, list[str]] = {}
 message_id_to_claim: dict[str, str] = {}
+message_id_to_original_claim: dict[str, str] = {}
 
 
 @router.get("/webhook")
@@ -127,9 +128,14 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             f"on message '{id_reacted_to}'\n"
                         )
                         if emoji == "👍" or emoji == "👎":
+                            claim_text = message_id_to_original_claim.get(
+                                id_reacted_to,
+                                message_id_to_claim.get(id_reacted_to, ""),
+                            )
                             background_tasks.add_task(
                                 process_reaction,
                                 emoji,
+                                claim_text,
                             )
 
                     elif message_type == "image":
@@ -184,11 +190,16 @@ async def process_message(
                     tailored_response = await generate_response(
                         claims, message_text, context
                     )
-                    await send_whatsapp_message(
+                    sent_message = await send_whatsapp_message(
                         phone_number=phone_number,
                         message=tailored_response,
                         reply_to=message_id,
                     )
+                    if sent_message and "messages" in sent_message:
+                        bot_message_id = sent_message["messages"][0]["id"]
+                        message_id_to_original_claim[bot_message_id] = (
+                            message_text
+                        )
                     if phone_number not in message_context:
                         message_context[phone_number] = []
                     message_context[phone_number].append(
@@ -198,24 +209,29 @@ async def process_message(
                     continue
 
                 if url:
-                    fact_results = await fact_check(claims, url)
+                    fact_results = await fact_check(claims, url, message_text)
                     relevant_results = clean_facts(fact_results)
 
                     tailored_response = await generate_response(
                         relevant_results, message_text, context
                     )
-
-                    await send_whatsapp_message(
+                    sent_message = await send_whatsapp_message(
                         phone_number=phone_number,
                         message=tailored_response,
                         reply_to=message_id,
                     )
+                    if sent_message and "messages" in sent_message:
+                        bot_message_id = sent_message["messages"][0]["id"]
+                        message_id_to_original_claim[bot_message_id] = (
+                            message_text
+                        )
                     if phone_number not in message_context:
                         message_context[phone_number] = []
                     message_context[phone_number].append(
                         f"Bot: {tailored_response}\n"
                     )
                     success = True
+                    continue
 
                 suggestion_prompt = get_prompt(
                     "claim_suggestion",
@@ -234,7 +250,7 @@ async def process_message(
                 ][:3]
 
                 if suggestions:
-                    await send_whatsapp_message(
+                    sent_message = await send_whatsapp_message(
                         phone_number,
                         tailored_response,
                         message_id,
@@ -245,9 +261,13 @@ async def process_message(
                         f"Bot: {tailored_response}\n"
                     )
 
+                    if sent_message and "messages" in sent_message:
+                        bot_message_id = sent_message["messages"][0]["id"]
+                        message_id_to_claim[bot_message_id] = suggestions[0]
+
                     if len(suggestions) > 1:
                         message_ids = []
-                        
+
                         for idx, suggestion in enumerate(suggestions, 1):
                             sent_message = await send_whatsapp_message(
                                 phone_number,
@@ -297,17 +317,13 @@ async def process_message(
         )
 
 
-async def process_reaction(
-    emoji,
-):
+async def process_reaction(emoji, claim_text):
     """Handles reaction processing asynchronously."""
     conn = None
-    print(f"Received reaction: {emoji}")
     try:
         conn = connect()
         timestamp = int(time.time())
-        insert_feedback(conn, emoji, timestamp)
-        print(f"Received reaction: {emoji}")
+        insert_feedback(conn, emoji, claim_text, timestamp)
     except Exception as e:
         logger.error(f"Error processing reaction: {e}")
     finally:

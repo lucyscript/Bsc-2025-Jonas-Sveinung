@@ -111,12 +111,13 @@ async def stance_detection(claim: str):
     return None
 
 
-async def fact_check(claims: list[str], url: str = ""):
+async def fact_check(claims: list[str], url: str = "", message: str = ""):
     """Check factual accuracy of a text using Factiverse API.
 
     Args:
         claims: List of claims to fact check
         url: Optional source URL of the content
+        message: Original text containing claims (optional)
 
     Returns:
         FactCheckResult containing verdict and supporting evidence
@@ -126,7 +127,7 @@ async def fact_check(claims: list[str], url: str = ""):
     """
     payload = {
         "logging": False,
-        "text": "",
+        "text": message,
         "claims": claims,
         "url": url,
     }
