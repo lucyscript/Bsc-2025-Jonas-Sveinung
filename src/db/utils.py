@@ -36,6 +36,7 @@ def create_feedback_table(conn):
                 """
                 CREATE TABLE IF NOT EXISTS feedback (
                     emoji TEXT,
+                    message_text TEXT,
                     timestamp INTEGER
                 );
                 """
@@ -47,7 +48,7 @@ def create_feedback_table(conn):
         raise
 
 
-def insert_feedback(conn, emoji, timestamp):
+def insert_feedback(conn, emoji, message_text, timestamp):
     """Inserts feedback into the feedback table."""
     logging.info("Inserting feedback...")
     create_feedback_table(conn)
@@ -55,10 +56,10 @@ def insert_feedback(conn, emoji, timestamp):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO feedback (emoji, timestamp)
-                VALUES (%s, %s);
+                INSERT INTO feedback (emoji, message_text, timestamp)
+                VALUES (%s, %s, %s);
                 """,
-                (emoji, timestamp),
+                (emoji, message_text, timestamp),
             )
             conn.commit()
         logging.info("Feedback inserted successfully.")
@@ -72,14 +73,23 @@ def get_all_feedback(conn):
     logging.info("Retrieving all feedback...")
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT emoji, timestamp FROM feedback")
+            cur.execute("SELECT emoji, message_text, timestamp FROM feedback")
             rows = cur.fetchall()
             feedback_list = []
             if rows:
                 logging.info("Feedback data:")
                 for row in rows:
-                    logging.info(f"  Emoji: {row[0]}, Timestamp: {row[1]}")
-                    feedback_list.append({"emoji": row[0], "timestamp": row[1]})
+                    logging.info(
+                        f"  Emoji: {row[0]}, Message: {row[1]}, "
+                        f"Timestamp: {row[2]}"
+                    )
+                    feedback_list.append(
+                        {
+                            "emoji": row[0],
+                            "message_text": row[1],
+                            "timestamp": row[2],
+                        }
+                    )
             else:
                 logging.info("No feedback data found.")
             return feedback_list
