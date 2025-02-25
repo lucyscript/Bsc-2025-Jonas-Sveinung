@@ -245,24 +245,27 @@ async def process_message(
                         f"Bot: {tailored_response}\n"
                     )
 
-                    message_ids = []
+                    if len(suggestions) > 1:
+                        message_ids = []
+                        
+                        for idx, suggestion in enumerate(suggestions, 1):
+                            sent_message = await send_whatsapp_message(
+                                phone_number,
+                                f"{idx}. {suggestion}",
+                                message_id,
+                            )
+                            if phone_number not in message_context:
+                                message_context[phone_number] = []
+                            message_context[phone_number].append(
+                                f"Bot: {idx}. {suggestion}\n"
+                            )
 
-                    for idx, suggestion in enumerate(suggestions, 1):
-                        sent_message = await send_whatsapp_message(
-                            phone_number,
-                            f"{idx}. {suggestion}",
-                            message_id,
-                        )
-                        if phone_number not in message_context:
-                            message_context[phone_number] = []
-                        message_context[phone_number].append(
-                            f"Bot: {idx}. {suggestion}\n"
-                        )
-
-                        if sent_message and "messages" in sent_message:
-                            bot_message_id = sent_message["messages"][0]["id"]
-                            message_id_to_claim[bot_message_id] = suggestion
-                            message_ids.append(bot_message_id)
+                            if sent_message and "messages" in sent_message:
+                                bot_message_id = sent_message["messages"][0][
+                                    "id"
+                                ]
+                                message_id_to_claim[bot_message_id] = suggestion
+                                message_ids.append(bot_message_id)
 
                     success = True
                     continue
