@@ -90,32 +90,6 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
                     if message_type == "text":
                         message_text = message.get("text", {}).get("body", "")
-                        context_info = message.get("context", {})
-
-                        if context_info:
-                            replied_to_id = context_info.get("id")
-                            if replied_to_id in message_id_to_claim:
-                                selected_claim = message_id_to_claim[
-                                    replied_to_id
-                                ]
-
-                                message_context[phone_number].append(
-                                    f"User replied to '{selected_claim}' "
-                                    f"with '{message_text}'\n"
-                                )
-                                context = "\n".join(
-                                    message_context[phone_number]
-                                )
-
-                                background_tasks.add_task(
-                                    process_selected_claim,
-                                    phone_number,
-                                    message_id,
-                                    selected_claim,
-                                    context,
-                                )
-                                continue
-                        print(f"MESSAGEE: {message_text}")
 
                         if phone_number not in message_context:
                             message_context[phone_number] = []
@@ -267,71 +241,32 @@ async def handle_message_with_intent(
                 )
 
             else:
-                print("I AM WHERE I AM SUPPORT TO BE")
-                # Use intent-specific prompt for suggesting claims
                 suggestion_prompt = get_prompt(
                     "claims_response",
                     message_text=message_text,
                     context=context,
-                    user_claims=" ".join(
-                        [f"{i+1}. {claim}" for i, claim in enumerate(claims)]
-                    ),
                 )
                 response = await generate(suggestion_prompt)
-
-                # Extract suggestions as before
-                suggestions = [
-                    re.sub(r"^\d+\.\s*", "", line).strip()
-                    for line in response.split("\n")
-                    if line.strip().startswith(("1.", "2.", "3."))
-                ][:3]
-
-                # Send suggestions as separate messages
-                if suggestions:
-                    sent_message = await send_whatsapp_message(
-                        phone_number,
-                        response,
-                        message_id,
-                    )
-                    message_context[phone_number].append(f"Bot: {response}\n")
-
-                    if sent_message and "messages" in sent_message:
-                        bot_message_id = sent_message["messages"][0]["id"]
-                        message_id_to_claim[bot_message_id] = suggestions[0]
-
-                    for idx, suggestion in enumerate(suggestions, 1):
-                        sent_message = await send_whatsapp_message(
-                            phone_number,
-                            f"{idx}. {suggestion}",
-                            message_id,
-                        )
-                        message_context[phone_number].append(
-                            f"Bot: {idx}. {suggestion}\n"
-                        )
-
-                        if sent_message and "messages" in sent_message:
-                            bot_message_id = sent_message["messages"][0]["id"]
-                            message_id_to_claim[bot_message_id] = suggestion
-
-                    return  # Early return as we've already sent messages
+                await send_whatsapp_message(
+                    phone_number,
+                    response,
+                    message_id,
+                )
+                message_context[phone_number].append(f"Bot: {response}\n")
 
         else:
-            # Unknown intent, fallback to generic response
             response = await handle_unknown_intent(intent_data, context)
 
-        # Send the response
         sent_message = await send_whatsapp_message(
             phone_number=phone_number,
             message=response,
             reply_to=message_id,
         )
 
-        # Store in message context
         if phone_number not in message_context:
             message_context[phone_number] = []
         message_context[phone_number].append(f"Bot: {response}\n")
 
-        # Store original claim for feedback
         if sent_message and "messages" in sent_message:
             bot_message_id = sent_message["messages"][0]["id"]
             message_id_to_original_claim[bot_message_id] = message_text
