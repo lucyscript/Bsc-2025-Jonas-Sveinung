@@ -5,25 +5,37 @@ import logging
 import os
 import re
 import time
+import json
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
-from src.config.prompts import get_prompt
 from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
     clean_facts,
-    detect_claims,
-    fact_check,
-    generate,
     generate_response,
     stance_detection,
+    fact_check,
+    detect_claims,
+    generate,
 )
 from src.image.utils import (
     download_image,
     extract_text_from_image,
     get_image_url,
 )
+from src.intent.utils import (
+    detect_intent,
+    handle_greeting_intent,
+    handle_help_intent,
+    handle_clarification_intent,
+    handle_source_intent,
+    handle_feedback_intent,
+    handle_off_topic_intent,
+    handle_unknown_intent,
+)
+
+from src.config.prompts import get_prompt
 from src.whatsapp.utils import send_whatsapp_message
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
@@ -103,6 +115,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                     context,
                                 )
                                 continue
+                        print(f"MESSAGEE: {message_text}")
 
                         if phone_number not in message_context:
                             message_context[phone_number] = []
@@ -170,133 +183,190 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(500, detail="Message processing error")
 
 
-async def process_message(
+async def handle_message_with_intent(
     phone_number: str, message_id: str, message_text: str, context: str
 ):
-    """Updated processing with context handling."""
+    """Process messages using intent detection to determine appropriate response."""
     try:
+        # Get raw response from API
+        raw_response = await detect_intent(message_text, context)
+        logger.info(f"RAW RESPONSE: {raw_response}")
+
+        # Initialize clean_response with raw value
+        clean_response = str(raw_response)
+        intent_data = {}
+
+        try:
+            # Handle different response types
+            if isinstance(raw_response, dict):
+                # Already parsed correctly
+                intent_data = raw_response
+            else:
+                # Convert string response to dict
+                intent_data = json.loads(raw_response)
+
+        except (json.JSONDecodeError, TypeError) as e:
+            # Fallback parsing for malformed JSON
+            logger.warning(f"Primary parsing failed, attempting cleanup: {e}")
+            try:
+                clean_response = (
+                    str(raw_response)
+                    .replace("'", '"')
+                    .replace("None", "null")
+                    .replace("True", "true")
+                    .replace("False", "false")
+                )
+                intent_data = json.loads(clean_response, strict=False)
+            except json.JSONDecodeError:
+                logger.error(f"Final parsing failed for: {clean_response}")
+                intent_data = {
+                    "intent_type": "fact_check_request",
+                    "confidence": 0.8,
+                }
+
+        print(f"INTENT DATA: {intent_data}")
+        # Validate and use intent_data
+        intent_type = intent_data.get("intent_type", "fact_check_request")
+        logger.info(f"PROCESSED INTENT: {intent_type}")
+
+        # Extract URL if present
         url_match = re.search(r"https?://\S+", message_text)
         url = url_match.group(0) if url_match else ""
 
-        max_retries = 3
-        retry_count = 0
-        success = False
+        # Process based on detected intent
+        if intent_type == "greeting":
+            response = await handle_greeting_intent(intent_data, context)
 
-        while not success and retry_count < max_retries:
-            try:
-                claims = await detect_claims(message_text)
+        elif intent_type == "help_request":
+            response = await handle_help_intent(intent_data, context)
 
-                if not claims:
-                    tailored_response = await generate_response(
-                        claims, message_text, context
-                    )
-                    sent_message = await send_whatsapp_message(
-                        phone_number=phone_number,
-                        message=tailored_response,
-                        reply_to=message_id,
-                    )
-                    if sent_message and "messages" in sent_message:
-                        bot_message_id = sent_message["messages"][0]["id"]
-                        message_id_to_original_claim[bot_message_id] = (
-                            message_text
-                        )
-                    if phone_number not in message_context:
-                        message_context[phone_number] = []
-                    message_context[phone_number].append(
-                        f"Bot: {tailored_response}\n"
-                    )
-                    success = True
-                    continue
+        elif intent_type == "clarification_request":
+            response = await handle_clarification_intent(intent_data, context)
 
-                if url:
-                    fact_results = await fact_check(claims, url, message_text)
-                    relevant_results = clean_facts(fact_results)
+        elif intent_type == "source_request":
+            response = await handle_source_intent(intent_data, context)
 
-                    tailored_response = await generate_response(
-                        relevant_results, message_text, context
-                    )
-                    sent_message = await send_whatsapp_message(
-                        phone_number=phone_number,
-                        message=tailored_response,
-                        reply_to=message_id,
-                    )
-                    if sent_message and "messages" in sent_message:
-                        bot_message_id = sent_message["messages"][0]["id"]
-                        message_id_to_original_claim[bot_message_id] = (
-                            message_text
-                        )
-                    if phone_number not in message_context:
-                        message_context[phone_number] = []
-                    message_context[phone_number].append(
-                        f"Bot: {tailored_response}\n"
-                    )
-                    success = True
-                    continue
+        elif intent_type == "feedback":
+            response = await handle_feedback_intent(intent_data, context)
 
+        elif intent_type == "off_topic":
+            response = await handle_off_topic_intent(intent_data, context)
+
+        elif intent_type == "fact_check_request":
+            # This is the default flow from your existing code
+            claims = await detect_claims(message_text)
+
+            if not claims:
+                response = await generate_response([], message_text, context)
+
+            elif url:
+                fact_results = await fact_check(claims, url, message_text)
+                relevant_results = clean_facts(fact_results)
+                response = await generate_response(
+                    relevant_results, message_text, context
+                )
+
+            else:
+                print("I AM WHERE I AM SUPPORT TO BE")
+                # Use intent-specific prompt for suggesting claims
                 suggestion_prompt = get_prompt(
-                    "claim_suggestion",
+                    "claims_response",
                     message_text=message_text,
                     context=context,
                     user_claims=" ".join(
                         [f"{i+1}. {claim}" for i, claim in enumerate(claims)]
                     ),
                 )
-                tailored_response = await generate(suggestion_prompt)
+                response = await generate(suggestion_prompt)
 
+                # Extract suggestions as before
                 suggestions = [
                     re.sub(r"^\d+\.\s*", "", line).strip()
-                    for line in tailored_response.split("\n")
+                    for line in response.split("\n")
                     if line.strip().startswith(("1.", "2.", "3."))
                 ][:3]
 
+                # Send suggestions as separate messages
                 if suggestions:
                     sent_message = await send_whatsapp_message(
                         phone_number,
-                        tailored_response,
+                        response,
                         message_id,
                     )
-                    if phone_number not in message_context:
-                        message_context[phone_number] = []
-                    message_context[phone_number].append(
-                        f"Bot: {tailored_response}\n"
-                    )
+                    message_context[phone_number].append(f"Bot: {response}\n")
 
                     if sent_message and "messages" in sent_message:
                         bot_message_id = sent_message["messages"][0]["id"]
                         message_id_to_claim[bot_message_id] = suggestions[0]
 
-                    if len(suggestions) > 1:
-                        message_ids = []
+                    for idx, suggestion in enumerate(suggestions, 1):
+                        sent_message = await send_whatsapp_message(
+                            phone_number,
+                            f"{idx}. {suggestion}",
+                            message_id,
+                        )
+                        message_context[phone_number].append(
+                            f"Bot: {idx}. {suggestion}\n"
+                        )
 
-                        for idx, suggestion in enumerate(suggestions, 1):
-                            sent_message = await send_whatsapp_message(
-                                phone_number,
-                                f"{idx}. {suggestion}",
-                                message_id,
-                            )
-                            if phone_number not in message_context:
-                                message_context[phone_number] = []
-                            message_context[phone_number].append(
-                                f"Bot: {idx}. {suggestion}\n"
-                            )
+                        if sent_message and "messages" in sent_message:
+                            bot_message_id = sent_message["messages"][0]["id"]
+                            message_id_to_claim[bot_message_id] = suggestion
 
-                            if sent_message and "messages" in sent_message:
-                                bot_message_id = sent_message["messages"][0][
-                                    "id"
-                                ]
-                                message_id_to_claim[bot_message_id] = suggestion
-                                message_ids.append(bot_message_id)
+                    return  # Early return as we've already sent messages
 
-                    success = True
-                    continue
+        else:
+            # Unknown intent, fallback to generic response
+            response = await handle_unknown_intent(intent_data, context)
+
+        # Send the response
+        sent_message = await send_whatsapp_message(
+            phone_number=phone_number,
+            message=response,
+            reply_to=message_id,
+        )
+
+        # Store in message context
+        if phone_number not in message_context:
+            message_context[phone_number] = []
+        message_context[phone_number].append(f"Bot: {response}\n")
+
+        # Store original claim for feedback
+        if sent_message and "messages" in sent_message:
+            bot_message_id = sent_message["messages"][0]["id"]
+            message_id_to_original_claim[bot_message_id] = message_text
+
+    except Exception as e:
+        logger.error(f"Intent processing failed: {str(e)}")
+        await send_whatsapp_message(
+            phone_number,
+            "⚠️ Temporary service issue. Please try again!",
+            message_id,
+        )
+
+
+async def process_message(
+    phone_number: str, message_id: str, message_text: str, context: str
+):
+    """Process messages with intent detection for tailored responses."""
+    try:
+        max_retries = 3
+        retry_count = 0
+        success = False
+
+        while not success and retry_count < max_retries:
+            try:
+                await handle_message_with_intent(
+                    phone_number, message_id, message_text, context
+                )
+                success = True
 
             except Exception as e:
                 retry_count += 1
                 if retry_count == max_retries:
                     await send_whatsapp_message(
                         phone_number,
-                        "⚠️ We're experiencing high demand. Please try again "
-                        "in a minute!",
+                        "⚠️ We're experiencing high demand. Please try again in a minute!",
                         message_id,
                     )
                     logger.error(f"Final attempt failed: {str(e)}")
@@ -305,8 +375,6 @@ async def process_message(
                         f"Retry {retry_count}/{max_retries} failed: {str(e)}"
                     )
                     await asyncio.sleep(2**retry_count)
-
-        success = True
 
     except Exception as e:
         logger.error(f"Background task failed: {str(e)}")
