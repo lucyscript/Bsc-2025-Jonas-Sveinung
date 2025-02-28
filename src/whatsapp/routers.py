@@ -1,23 +1,24 @@
 """Enhanced WhatsApp Cloud API integration with Factiverse fact-checking."""
 
 import asyncio
+import json
 import logging
 import os
 import re
 import time
-import json
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
+from src.config.prompts import get_prompt
 from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
     clean_facts,
+    detect_claims,
+    fact_check,
+    generate,
     generate_response,
     stance_detection,
-    fact_check,
-    detect_claims,
-    generate,
 )
 from src.image.utils import (
     download_image,
@@ -26,16 +27,14 @@ from src.image.utils import (
 )
 from src.intent.utils import (
     detect_intent,
+    handle_clarification_intent,
+    handle_feedback_intent,
     handle_greeting_intent,
     handle_help_intent,
-    handle_clarification_intent,
-    handle_source_intent,
-    handle_feedback_intent,
     handle_off_topic_intent,
+    handle_source_intent,
     handle_unknown_intent,
 )
-
-from src.config.prompts import get_prompt
 from src.whatsapp.utils import send_whatsapp_message
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
@@ -45,8 +44,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 message_context: dict[str, list[str]] = {}
-message_id_to_claim: dict[str, str] = {}
-message_id_to_original_claim: dict[str, str] = {}
+message_to_feedback: dict[str, str] = {}
 
 
 @router.get("/webhook")
@@ -115,14 +113,14 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             f"on message '{id_reacted_to}'\n"
                         )
                         if emoji == "👍" or emoji == "👎":
-                            claim_text = message_id_to_original_claim.get(
-                                id_reacted_to,
-                                message_id_to_claim.get(id_reacted_to, ""),
+                            original_text = message_to_feedback.get(
+                                id_reacted_to, ""
                             )
+                            print(f"original_text: {original_text}")
                             background_tasks.add_task(
                                 process_reaction,
                                 emoji,
-                                claim_text,
+                                original_text,
                             )
 
                     elif message_type == "image":
@@ -136,17 +134,26 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                 image_id,
                             )
                         else:
+                            error_msg = "No image ID found. Please try again."
                             await send_whatsapp_message(
                                 phone_number,
-                                "No image ID found. Please try again.",
+                                error_msg,
                                 message_id,
                             )
+                            message_context[phone_number].append(
+                                f"Bot: {error_msg}\n"
+                            )
                     else:
+                        error_msg = (
+                            "Sorry, I can only process text and image messages."
+                        )
                         await send_whatsapp_message(
                             phone_number,
-                            "Sorry, I can only process "
-                            "text and image messages.",
+                            error_msg,
                             message_id,
+                        )
+                        message_context[phone_number].append(
+                            f"Bot: {error_msg}\n"
                         )
 
                 except (KeyError, IndexError):
@@ -160,27 +167,21 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 async def handle_message_with_intent(
     phone_number: str, message_id: str, message_text: str, context: str
 ):
-    """Process messages using intent detection to determine appropriate response."""
+    """Process messages using intent detection."""
     try:
-        # Get raw response from API
         raw_response = await detect_intent(message_text, context)
         logger.info(f"RAW RESPONSE: {raw_response}")
 
-        # Initialize clean_response with raw value
         clean_response = str(raw_response)
         intent_data = {}
 
         try:
-            # Handle different response types
             if isinstance(raw_response, dict):
-                # Already parsed correctly
                 intent_data = raw_response
             else:
-                # Convert string response to dict
                 intent_data = json.loads(raw_response)
 
         except (json.JSONDecodeError, TypeError) as e:
-            # Fallback parsing for malformed JSON
             logger.warning(f"Primary parsing failed, attempting cleanup: {e}")
             try:
                 clean_response = (
@@ -199,15 +200,12 @@ async def handle_message_with_intent(
                 }
 
         print(f"INTENT DATA: {intent_data}")
-        # Validate and use intent_data
         intent_type = intent_data.get("intent_type", "fact_check_request")
         logger.info(f"PROCESSED INTENT: {intent_type}")
 
-        # Extract URL if present
         url_match = re.search(r"https?://\S+", message_text)
         url = url_match.group(0) if url_match else ""
 
-        # Process based on detected intent
         if intent_type == "greeting":
             response = await handle_greeting_intent(intent_data, context)
 
@@ -227,14 +225,13 @@ async def handle_message_with_intent(
             response = await handle_off_topic_intent(intent_data, context)
 
         elif intent_type == "fact_check_request":
-            # This is the default flow from your existing code
             claims = await detect_claims(message_text)
 
             if not claims:
                 response = await generate_response([], message_text, context)
 
             elif url:
-                fact_results = await fact_check(claims, url, message_text)
+                fact_results = await fact_check(url)
                 relevant_results = clean_facts(fact_results)
                 response = await generate_response(
                     relevant_results, message_text, context
@@ -252,8 +249,9 @@ async def handle_message_with_intent(
                     response,
                     message_id,
                 )
+                if phone_number not in message_context:
+                    message_context[phone_number] = []
                 message_context[phone_number].append(f"Bot: {response}\n")
-
         else:
             response = await handle_unknown_intent(intent_data, context)
 
@@ -269,15 +267,19 @@ async def handle_message_with_intent(
 
         if sent_message and "messages" in sent_message:
             bot_message_id = sent_message["messages"][0]["id"]
-            message_id_to_original_claim[bot_message_id] = message_text
+            message_to_feedback[bot_message_id] = message_text
 
     except Exception as e:
         logger.error(f"Intent processing failed: {str(e)}")
-        await send_whatsapp_message(
-            phone_number,
-            "⚠️ Temporary service issue. Please try again!",
-            message_id,
+        error_msg = "⚠️ Temporary service issue. Please try again!"
+        sent_message = await send_whatsapp_message(
+            phone_number, error_msg, message_id
         )
+        message_context[phone_number].append(f"Bot: {error_msg}\n")
+
+        if sent_message and "messages" in sent_message:
+            bot_message_id = sent_message["messages"][0]["id"]
+            message_to_feedback[bot_message_id] = message_text
 
 
 async def process_message(
@@ -299,11 +301,16 @@ async def process_message(
             except Exception as e:
                 retry_count += 1
                 if retry_count == max_retries:
+                    error_msg = "⚠️ We're experiencing high demand. "
+                    "Please try again in a minute!"
                     await send_whatsapp_message(
                         phone_number,
-                        "⚠️ We're experiencing high demand. Please try again in a minute!",
+                        error_msg,
                         message_id,
                     )
+                    if phone_number not in message_context:
+                        message_context[phone_number] = []
+                    message_context[phone_number].append(f"Bot: {error_msg}\n")
                     logger.error(f"Final attempt failed: {str(e)}")
                 else:
                     logger.warning(
@@ -312,12 +319,16 @@ async def process_message(
                     await asyncio.sleep(2**retry_count)
 
     except Exception as e:
-        logger.error(f"Background task failed: {str(e)}")
+        error_msg = "⚠️ We're experiencing high demand. Please try again later!"
         await send_whatsapp_message(
             phone_number,
-            "⚠️ We're experiencing high demand. Please try again later!",
+            error_msg,
             message_id,
         )
+        if phone_number not in message_context:
+            message_context[phone_number] = []
+        message_context[phone_number].append(f"Bot: {error_msg}\n")
+        logger.error(f"Background task failed: {str(e)}")
 
 
 async def process_reaction(emoji, claim_text):

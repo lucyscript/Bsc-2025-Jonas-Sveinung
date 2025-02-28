@@ -2,16 +2,16 @@
 
 import json
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
-from src.fact_checker.utils import generate
 from src.config.prompts import get_prompt
+from src.fact_checker.utils import generate
 
 logger = logging.getLogger(__name__)
 
+
 async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
-    """
-    Detect the user's intent from their message.
+    """Detect the user's intent from their message.
 
     Args:
         message_text: The user's message text
@@ -23,22 +23,20 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
     intent_prompt = get_prompt(
         "intent_detection", message_text=message_text, context=context
     )
-    # Use the /generate endpoint for intent detection
+
     intent_response = await generate(intent_prompt, message_text)
     print(f"INTENT RESPONSE: {intent_response}")
     try:
-        # Parse the structured response from the LLM
         intent_data = json.loads(intent_response)
         return intent_data
     except json.JSONDecodeError:
-        # Fallback to simple fact-checking intent if parsing fails
         return {
             "intent_type": "fact_check_request",
             "confidence": 0.7,
             "has_question": False,
         }
 
-# Intent handlers for different detected intents
+
 async def handle_greeting_intent(
     intent_data: Dict[str, Any], context: str
 ) -> str:
