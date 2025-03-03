@@ -27,12 +27,10 @@ from src.image.utils import (
 )
 from src.intent.utils import (
     detect_intent,
-    handle_clarification_intent,
-    handle_greeting_intent,
-    handle_help_intent,
-    handle_off_topic_intent,
-    handle_source_intent,
-    handle_unknown_intent,
+    handle_bot_help_intent,
+    handle_check_fact_intent,
+    handle_fact_check_intent,
+    handle_general_intent,
 )
 from src.whatsapp.utils import send_whatsapp_message
 
@@ -220,41 +218,56 @@ async def handle_message_with_intent(
             except json.JSONDecodeError:
                 logger.error(f"Final parsing failed for: {clean_response}")
                 intent_data = {
-                    "intent_type": "fact_check_request",
+                    "intent_type": "fact_check",
                     "confidence": 0.8,
                 }
 
-        intent_type = intent_data.get("intent_type", "fact_check_request")
+        intent_type = intent_data.get("intent_type", "fact_check")
 
-        if intent_type == "greeting":
-            response = await handle_greeting_intent(intent_data, context)
+        if intent_type == "fact_check":
+            response = await handle_fact_check_intent(
+                intent_data, message_text, context
+            )
 
-        elif intent_type == "help_request":
-            response = await handle_help_intent(intent_data, context)
+        elif intent_type == "check_fact":
+            response = await handle_check_fact_intent(
+                intent_data, message_text, context
+            )
 
-        elif intent_type == "clarification_request":
-            response = await handle_clarification_intent(intent_data, context)
+        elif intent_type == "bot_help":
+            response = await handle_bot_help_intent(
+                intent_data, message_text, context
+            )
 
-        elif intent_type == "source_request":
-            response = await handle_source_intent(intent_data, context)
+        elif intent_type == "general":
+            response = await handle_general_intent(
+                intent_data, message_text, context
+            )
 
-        elif intent_type == "off_topic":
-            response = await handle_off_topic_intent(intent_data, context)
-
-        elif intent_type == "fact_check_request":
+        else:
             claims = await detect_claims(message_text)
-
             if not claims:
-                response = await generate_response([], message_text, context)
-            else:
-                suggestion_prompt = get_prompt(
-                    "claims_response",
+                general_prompt = get_prompt(
+                    "general",
                     message_text=message_text,
                     context=context,
+                    topic=intent_data.get("topic", ""),
+                    question=intent_data.get("question", ""),
+                    sentiment=intent_data.get("sentiment", "neutral"),
+                    context_reference=str(
+                        intent_data.get("context_reference", False)
+                    ).lower(),
                 )
-                response = await generate(suggestion_prompt)
-        else:
-            response = await handle_unknown_intent(intent_data, context)
+                response = await generate(general_prompt)
+            else:
+                fact_check_prompt = get_prompt(
+                    "fact_check",
+                    message_text=message_text,
+                    context=context,
+                    confidence=0.8,
+                    sentiment="neutral",
+                )
+                response = await generate(fact_check_prompt)
 
         sent_message = await send_whatsapp_message(
             phone_number=phone_number,

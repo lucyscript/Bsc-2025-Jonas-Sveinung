@@ -465,3 +465,63 @@ async def generate_response(
     except Exception as e:
         print(f"Group processing failed: {str(e)}")
         return ""
+
+
+async def get_microfacts(text: str):
+    """Get microfacts for a given text using Factiverse API.
+
+    Args:
+        text: Text to analyze for microfacts
+
+    Returns:
+        Dictionary containing entity information and microfacts
+
+    Raises:
+        HTTPException: When API call fails or service is unavailable
+    """
+    payload = {"lang": "", "text": text, "recommend_entities": True}
+
+    headers = {
+        "Authorization": f"Bearer {FACTIVERSE_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    max_retries = 3
+    retry_delay = 1
+
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                response = await client.post(
+                    f"{API_BASE_URL}/microfacts",
+                    content=json.dumps(payload),
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response.json()
+
+        except httpx.HTTPStatusError as e:
+            if attempt < max_retries and e.response.status_code >= 500:
+                print(
+                    f"Retry attempt {attempt + 1}/{max_retries} for 5xx error"
+                )
+                await asyncio.sleep(retry_delay * (2**attempt))
+                continue
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"Microfacts service error: {e.response.text}",
+            )
+        except httpx.RequestError as e:
+            if attempt < max_retries:
+                print(
+                    f"Retry attempt {attempt + 1}/{max_retries} for "
+                    "connection error"
+                )
+                await asyncio.sleep(retry_delay * (2**attempt))
+                continue
+            raise HTTPException(
+                status_code=503,
+                detail=f"Service temporarily unavailable: {str(e)}",
+            )
+
+    return None

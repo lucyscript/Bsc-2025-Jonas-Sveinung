@@ -5,7 +5,13 @@ import logging
 from typing import Any, Dict
 
 from src.config.prompts import get_prompt
-from src.fact_checker.utils import generate
+from src.fact_checker.utils import (
+    clean_facts,
+    detect_claims,
+    generate,
+    get_microfacts,
+    stance_detection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,99 +36,122 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
         return intent_data
     except json.JSONDecodeError:
         return {
-            "intent_type": "fact_check_request",
+            "intent_type": "fact_check",
             "confidence": 0.7,
-            "has_question": False,
+            "sentiment": "neutral",
+            "context_reference": False,
+            "url_present": False,
         }
 
 
-async def handle_greeting_intent(
-    intent_data: Dict[str, Any], context: str
+async def handle_fact_check_intent(
+    intent_data: Dict[str, Any], message_text: str, context: str
 ) -> str:
-    """Generate response for greeting intent."""
-    greeting_prompt = get_prompt(
-        "greeting_response",
+    """Generate response for fact check intent."""
+    claims = await detect_claims(message_text)
+    final_evidence_text = ""
+
+    if claims:
+        for claim in claims:
+            try:
+                fact_results = await stance_detection(claim)
+
+                relevant_results = clean_facts(fact_results)
+
+                evidence_text = json.dumps(relevant_results, ensure_ascii=False)
+                final_evidence_text += f"{evidence_text}\n"
+
+            except Exception as e:
+                logger.error(f"Stance detection failed: {str(e)}")
+
+        fact_check_prompt = get_prompt(
+            "fact_check",
+            message_text=message_text,
+            context=context,
+            confidence=intent_data.get("confidence", 0.8),
+            sentiment=intent_data.get("sentiment", "neutral"),
+        )
+
+        return await generate(fact_check_prompt, final_evidence_text)
+    else:
+        general_prompt = get_prompt(
+            "general",
+            message_text=message_text,
+            context=context,
+            topic=intent_data.get("topic", ""),
+            question=intent_data.get("question", ""),
+            sentiment=intent_data.get("sentiment", "neutral"),
+            context_reference=str(
+                intent_data.get("context_reference", False)
+            ).lower(),
+        )
+        return await generate(general_prompt)
+
+
+async def handle_check_fact_intent(
+    intent_data: Dict[str, Any], message_text: str, context: str
+) -> str:
+    """Generate response for check fact intent using microfacts."""
+    microfacts_data = await get_microfacts(message_text)
+
+    topic = intent_data.get("topic", "")
+    question = intent_data.get("question", "")
+
+    if (
+        microfacts_data
+        and microfacts_data.get("spots")
+        and len(microfacts_data.get("spots")) > 0
+    ):
+        if not topic and microfacts_data.get("spots"):
+            first_spot = microfacts_data.get("spots")[0]
+            if first_spot.get("entity") and first_spot.get("entity").get(
+                "title"
+            ):
+                topic = first_spot.get("entity").get("title")
+
+    check_fact_prompt = get_prompt(
+        "check_fact",
+        message_text=message_text,
         context=context,
-        confidence=intent_data.get("confidence", 0.9),
+        topic=topic,
+        question=question or message_text,
         sentiment=intent_data.get("sentiment", "neutral"),
     )
-    return await generate(greeting_prompt)
+
+    if microfacts_data:
+        return await generate(check_fact_prompt, json.dumps(microfacts_data))
+
+    return await generate(check_fact_prompt)
 
 
-async def handle_help_intent(intent_data: Dict[str, Any], context: str) -> str:
-    """Generate response for help request intent."""
-    question = intent_data.get("question", "")
-    question_text = f"They specifically asked: '{question}'" if question else ""
-
-    help_prompt = get_prompt(
-        "help_response",
-        context=context,
-        help_type=intent_data.get("help_type", "general"),
-        confidence=intent_data.get("confidence", 0.8),
-        question_text=question_text,
-    )
-    return await generate(help_prompt)
-
-
-async def handle_clarification_intent(
-    intent_data: Dict[str, Any], context: str
+async def handle_bot_help_intent(
+    intent_data: Dict[str, Any], message_text: str, context: str
 ) -> str:
-    """Generate response for clarification request intent."""
-    clarification_prompt = get_prompt(
-        "clarification_response",
+    """Generate response for bot help intent."""
+    bot_help_prompt = get_prompt(
+        "bot_help",
+        message_text=message_text,
         context=context,
         topic=intent_data.get("topic", ""),
         question=intent_data.get("question", ""),
         sentiment=intent_data.get("sentiment", "neutral"),
     )
-    return await generate(clarification_prompt)
+    return await generate(bot_help_prompt)
 
 
-async def handle_source_intent(
-    intent_data: Dict[str, Any], context: str
+async def handle_general_intent(
+    intent_data: Dict[str, Any], message_text: str, context: str
 ) -> str:
-    """Generate response for source request intent."""
-    question = intent_data.get("question", "")
-    question_text = f"They specifically asked: '{question}'" if question else ""
-
-    source_prompt = get_prompt(
-        "source_response",
+    """Generate response for general conversation intent."""
+    general_prompt = get_prompt(
+        "general",
+        message_text=message_text,
         context=context,
         topic=intent_data.get("topic", ""),
-        question_text=question_text,
+        question=intent_data.get("question", ""),
         sentiment=intent_data.get("sentiment", "neutral"),
+        context_reference=str(
+            intent_data.get("context_reference", False)
+        ).lower(),
     )
-    return await generate(source_prompt)
-
-
-async def handle_off_topic_intent(
-    intent_data: Dict[str, Any], context: str
-) -> str:
-    """Generate response for off-topic conversation intent."""
-    question = intent_data.get("question", "")
-    question_text = f"They specifically asked: '{question}'" if question else ""
-
-    off_topic_prompt = get_prompt(
-        "off_topic_response",
-        context=context,
-        topic=intent_data.get("topic", ""),
-        question_text=question_text,
-        sentiment=intent_data.get("sentiment", "neutral"),
-    )
-    return await generate(off_topic_prompt)
-
-
-async def handle_unknown_intent(
-    intent_data: Dict[str, Any], context: str
-) -> str:
-    """Generate response for unknown or unclear intent."""
-    question = intent_data.get("question", "")
-    question_text = f"They might be asking: '{question}'" if question else ""
-
-    unknown_prompt = get_prompt(
-        "unknown_intent_response",
-        context=context,
-        topic=intent_data.get("topic", ""),
-        question_text=question_text,
-    )
-    return await generate(unknown_prompt)
+    return await generate(general_prompt)
