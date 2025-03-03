@@ -41,6 +41,9 @@ async def generate(prompt: str, text: str = "") -> str:
                 headers=headers,
             )
             response.raise_for_status()
+            print(
+                f"/GENERATE RESPONSE: {response.json().get('full_output', '')}"
+            )
             return response.json().get("full_output", "").replace("**", "*")
 
     except Exception as e:
@@ -127,6 +130,7 @@ async def fact_check(url: str):
     """
     payload = {
         "logging": False,
+        "lang": "en",
         "url": url,
     }
 
@@ -296,10 +300,82 @@ def clean_facts(json_data: dict | None) -> list:
             }
         )
 
+    elif (
+        "text" in json_data
+        and isinstance(json_data["text"], list)
+        and len(json_data["text"]) > 0
+    ):
+        for text_item in json_data["text"]:
+            claim_text = text_item.get("claim", "")
+            evidence_list = text_item.get("evidence", [])
+            summary = text_item.get("summary", "")
+            fix = text_item.get("fix", "")
+
+            final_verdict = "Uncertain"
+            if text_item.get("finalPrediction") is not None:
+                final_verdict = (
+                    "Incorrect"
+                    if text_item.get("finalPrediction") == 0
+                    else "Correct"
+                )
+
+            if final_verdict == "Incorrect":
+                confidence = round(
+                    (1 - (text_item.get("finalScore") or 0)) * 100, 2
+                )
+            else:
+                confidence = round((text_item.get("finalScore") or 0) * 100, 2)
+
+            supporting_evidence = []
+            refuting_evidence = []
+
+            for evidence in evidence_list:
+                label = evidence.get("labelDescription", "")
+                if label not in ["SUPPORTS", "REFUTES"]:
+                    continue
+
+                evidence_entry = {
+                    "labelDescription": label,
+                    "domain_name": evidence.get("domainName", ""),
+                    "reliability": evidence.get("domain_reliability", {}).get(
+                        "Reliability", "Unknown"
+                    ),
+                    "url": evidence.get("url", ""),
+                    "evidence_snippet": (
+                        evidence.get("evidenceSnippet", "")[:1000].replace(
+                            '"', "'"
+                        )
+                        + "..."
+                        if len(evidence.get("evidenceSnippet", "")) > 1000
+                        else evidence.get("evidenceSnippet", "").replace(
+                            '"', "'"
+                        )
+                    ),
+                }
+
+                if label == "SUPPORTS":
+                    supporting_evidence.append(evidence_entry)
+                else:
+                    refuting_evidence.append(evidence_entry)
+
+            cleaned_results.append(
+                {
+                    "claim": claim_text,
+                    "verdict": final_verdict,
+                    "confidence_percentage": confidence,
+                    "summary": summary,
+                    "fix": fix,
+                    "supporting_evidence": supporting_evidence,
+                    "refuting_evidence": refuting_evidence,
+                }
+            )
+
     else:
         for claim in json_data.get("claims", []):
             claim_text = claim.get("claim", "")
             final_prediction = claim.get("finalPrediction")
+            summary = claim.get("summary", "")
+            fix = claim.get("fix", "")
             final_verdict = "Uncertain"
             if final_prediction is not None:
                 final_verdict = (
@@ -350,6 +426,8 @@ def clean_facts(json_data: dict | None) -> list:
                     "claim": claim_text,
                     "verdict": final_verdict,
                     "confidence_percentage": confidence,
+                    "summary": summary,
+                    "fix": fix,
                     "supporting_evidence": supporting_evidence,
                     "refuting_evidence": refuting_evidence,
                 }
