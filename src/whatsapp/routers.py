@@ -28,7 +28,6 @@ from src.image.utils import (
 from src.intent.utils import (
     detect_intent,
     handle_clarification_intent,
-    handle_feedback_intent,
     handle_greeting_intent,
     handle_help_intent,
     handle_off_topic_intent,
@@ -95,6 +94,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             f"User: {message_text}\n"
                         )
                         context = "\n".join(message_context[phone_number][:-1])
+                        print(f"User: {message_text}")
                         background_tasks.add_task(
                             process_message,
                             phone_number,
@@ -169,9 +169,34 @@ async def handle_message_with_intent(
 ):
     """Process messages using intent detection."""
     try:
-        raw_response = await detect_intent(message_text, context)
-        logger.info(f"RAW RESPONSE: {raw_response}")
+        url_match = re.search(r"https?://\S+", message_text)
 
+        if url_match:
+            url = url_match.group(0)
+
+            fact_results = await fact_check(url)
+            relevant_results = clean_facts(fact_results)
+            response = await generate_response(
+                relevant_results, message_text, context
+            )
+
+            sent_message = await send_whatsapp_message(
+                phone_number=phone_number,
+                message=response,
+                reply_to=message_id,
+            )
+
+            if phone_number not in message_context:
+                message_context[phone_number] = []
+            message_context[phone_number].append(f"Bot: {response}\n")
+
+            if sent_message and "messages" in sent_message:
+                bot_message_id = sent_message["messages"][0]["id"]
+                message_to_feedback[bot_message_id] = message_text
+
+            return
+
+        raw_response = await detect_intent(message_text, context)
         clean_response = str(raw_response)
         intent_data = {}
 
@@ -199,12 +224,7 @@ async def handle_message_with_intent(
                     "confidence": 0.8,
                 }
 
-        print(f"INTENT DATA: {intent_data}")
         intent_type = intent_data.get("intent_type", "fact_check_request")
-        logger.info(f"PROCESSED INTENT: {intent_type}")
-
-        url_match = re.search(r"https?://\S+", message_text)
-        url = url_match.group(0) if url_match else ""
 
         if intent_type == "greeting":
             response = await handle_greeting_intent(intent_data, context)
@@ -218,9 +238,6 @@ async def handle_message_with_intent(
         elif intent_type == "source_request":
             response = await handle_source_intent(intent_data, context)
 
-        elif intent_type == "feedback":
-            response = await handle_feedback_intent(intent_data, context)
-
         elif intent_type == "off_topic":
             response = await handle_off_topic_intent(intent_data, context)
 
@@ -229,14 +246,6 @@ async def handle_message_with_intent(
 
             if not claims:
                 response = await generate_response([], message_text, context)
-
-            elif url:
-                fact_results = await fact_check(url)
-                relevant_results = clean_facts(fact_results)
-                response = await generate_response(
-                    relevant_results, message_text, context
-                )
-
             else:
                 suggestion_prompt = get_prompt(
                     "claims_response",
@@ -244,14 +253,6 @@ async def handle_message_with_intent(
                     context=context,
                 )
                 response = await generate(suggestion_prompt)
-                await send_whatsapp_message(
-                    phone_number,
-                    response,
-                    message_id,
-                )
-                if phone_number not in message_context:
-                    message_context[phone_number] = []
-                message_context[phone_number].append(f"Bot: {response}\n")
         else:
             response = await handle_unknown_intent(intent_data, context)
 
