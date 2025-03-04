@@ -13,12 +13,10 @@ from fastapi.responses import PlainTextResponse
 from src.config.prompts import get_prompt
 from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
-    clean_facts,
     detect_claims,
-    fact_check,
     generate,
-    generate_response,
-    stance_detection,
+    claim_search, 
+    clean_claim_search_results,
 )
 from src.image.utils import (
     download_image,
@@ -28,7 +26,6 @@ from src.image.utils import (
 from src.intent.utils import (
     detect_intent,
     handle_bot_help_intent,
-    handle_check_fact_intent,
     handle_fact_check_intent,
     handle_general_intent,
 )
@@ -85,6 +82,31 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
                     if message_type == "text":
                         message_text = message.get("text", {}).get("body", "")
+                        context_info = message.get("context", {})
+
+                        if context_info:
+                            replied_to_id = context_info.get("id")
+                            if replied_to_id in message_to_feedback:
+                                selected_claim = message_to_feedback[
+                                    replied_to_id
+                                ]
+
+                                message_context[phone_number].append(
+                                    f"User replied to '{selected_claim}' "
+                                    f"with '{message_text}'\n"
+                                )
+                                context = "\n".join(
+                                    message_context[phone_number]
+                                )
+
+                                background_tasks.add_task(
+                                    handle_fact_check_intent,
+                                    phone_number,
+                                    message_id,
+                                    selected_claim,
+                                    context,
+                                )
+                                continue
 
                         if phone_number not in message_context:
                             message_context[phone_number] = []
@@ -167,33 +189,6 @@ async def handle_message_with_intent(
 ):
     """Process messages using intent detection."""
     try:
-        url_match = re.search(r"https?://\S+", message_text)
-
-        if url_match:
-            url = url_match.group(0)
-
-            fact_results = await fact_check(url)
-            relevant_results = clean_facts(fact_results)
-            response = await generate_response(
-                relevant_results, message_text, context
-            )
-
-            sent_message = await send_whatsapp_message(
-                phone_number=phone_number,
-                message=response,
-                reply_to=message_id,
-            )
-
-            if phone_number not in message_context:
-                message_context[phone_number] = []
-            message_context[phone_number].append(f"Bot: {response}\n")
-
-            if sent_message and "messages" in sent_message:
-                bot_message_id = sent_message["messages"][0]["id"]
-                message_to_feedback[bot_message_id] = message_text
-
-            return
-
         raw_response = await detect_intent(message_text, context)
         clean_response = str(raw_response)
         intent_data = {}
@@ -219,55 +214,78 @@ async def handle_message_with_intent(
                 logger.error(f"Final parsing failed for: {clean_response}")
                 intent_data = {
                     "intent_type": "fact_check",
-                    "confidence": 0.8,
+                    "short_message": "true",
                 }
 
         intent_type = intent_data.get("intent_type", "fact_check")
+        short_message = intent_data.get("short_message", False)
 
-        if intent_type == "fact_check":
+        if intent_type == "fact_check" and short_message is True:
             response = await handle_fact_check_intent(
-                intent_data, message_text, context
+                message_text, context, [message_text]
             )
 
-        elif intent_type == "check_fact":
-            response = await handle_check_fact_intent(
-                intent_data, message_text, context
-            )
-
-        elif intent_type == "bot_help":
-            response = await handle_bot_help_intent(
-                intent_data, message_text, context
-            )
-
-        elif intent_type == "general":
-            response = await handle_general_intent(
-                intent_data, message_text, context
-            )
-
-        else:
+        if intent_type == "fact_check" and short_message is False:
             claims = await detect_claims(message_text)
+            print(f"claims: {claims}")
             if not claims:
-                general_prompt = get_prompt(
-                    "general",
-                    message_text=message_text,
-                    context=context,
-                    topic=intent_data.get("topic", ""),
-                    question=intent_data.get("question", ""),
-                    sentiment=intent_data.get("sentiment", "neutral"),
-                    context_reference=str(
-                        intent_data.get("context_reference", False)
-                    ).lower(),
+                claim_suggestions = await claim_search(message_text)
+                cleaned_claim_suggestions = clean_claim_search_results(claim_suggestions)
+
+                top_suggestions = []
+                for result in cleaned_claim_suggestions[:3]:
+                    if "claim" in result:
+                        top_suggestions.append(result["claim"])
+                
+                suggestions_text = json.dumps(top_suggestions)
+                suggestion_prompt = get_prompt("claim_suggestion", message_text=message_text, context=context, claim_suggestions=suggestions_text)
+                tailored_response = await generate(suggestion_prompt, suggestions_text)
+
+                sent_message = await send_whatsapp_message(
+                    phone_number,
+                    tailored_response,
+                    message_id,
                 )
-                response = await generate(general_prompt)
+                if phone_number not in message_context:
+                    message_context[phone_number] = []
+                message_context[phone_number].append(
+                    f"Bot: {tailored_response}\n"
+                )
+
+                if sent_message and "messages" in sent_message:
+                    bot_message_id = sent_message["messages"][0]["id"]
+                    message_to_feedback[bot_message_id] = top_suggestions[0]
+
+                for idx, suggestion in enumerate(top_suggestions, 1):
+                    sent_message = await send_whatsapp_message(
+                        phone_number,
+                        f"{idx}. {suggestion}",
+                        message_id,
+                    )
+                    if phone_number not in message_context:
+                        message_context[phone_number] = []
+                    message_context[phone_number].append(
+                        f"Bot: {idx}. {suggestion}\n"
+                    )
+
+                    if sent_message and "messages" in sent_message:
+                        bot_message_id = sent_message["messages"][0]["id"]
+                        message_to_feedback[bot_message_id] = suggestion
+                return
             else:
-                fact_check_prompt = get_prompt(
-                    "fact_check",
-                    message_text=message_text,
-                    context=context,
-                    confidence=0.8,
-                    sentiment="neutral",
-                )
-                response = await generate(fact_check_prompt)
+                response = await handle_fact_check_intent(
+                message_text, context, claims
+            )
+
+        if intent_type == "bot_help":
+            response = await handle_bot_help_intent(
+                message_text, context
+            )
+
+        if intent_type == "general":
+            response = await handle_general_intent(
+                message_text, context
+            )
 
         sent_message = await send_whatsapp_message(
             phone_number=phone_number,
@@ -408,33 +426,3 @@ async def process_image(phone_number: str, message_id: str, image_id: str):
         message_context[phone_number].append(
             "Bot: Failed to process the image. Please try again.\n"
         )
-
-
-async def process_selected_claim(
-    phone_number: str, message_id: str, claim: str, context: str
-):
-    """Process a single user-selected claim."""
-    try:
-        fact_result = await stance_detection(claim)
-        relevant_results = clean_facts(fact_result)
-
-        tailored_response = await generate_response(
-            relevant_results, claim, context
-        )
-
-        await send_whatsapp_message(
-            phone_number,
-            tailored_response,
-            message_id,
-        )
-        if phone_number not in message_context:
-            message_context[phone_number] = []
-        message_context[phone_number].append(f"Bot: {tailored_response}\n")
-
-    except Exception as e:
-        logger.error(f"Claim processing failed: {str(e)}")
-        error_msg = "⚠️ Error processing selected claim. Please try again."
-        await send_whatsapp_message(phone_number, error_msg, message_id)
-
-        if phone_number in message_context:
-            message_context[phone_number].append(f"Bot: {error_msg}\n")

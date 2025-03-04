@@ -9,8 +9,6 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import HTTPException
 
-from src.config.prompts import get_prompt
-
 load_dotenv()
 
 API_BASE_URL = "https://dev.factiverse.ai/v1"
@@ -436,50 +434,25 @@ def clean_facts(json_data: dict | None) -> list:
     return cleaned_results
 
 
-async def generate_response(
-    evidence: list, message: str, context: str = ""
-) -> str:
-    """Process a single claim group through the generation pipeline."""
-    try:
-        message_text = message.strip()
-        claims = [entry["claim"] for entry in evidence]
-
-        if not claims:
-            response_prompt = get_prompt(
-                "no_claims_response",
-                message_text=message_text,
-                context=context,
-            )
-            return await generate(response_prompt)
-
-        response_prompt = get_prompt(
-            "claims_response",
-            message_text=message_text,
-            context=context,
-        )
-
-        # JSON serialization with proper quote handling
-        evidence_text = json.dumps(evidence, ensure_ascii=False)
-        return await generate(response_prompt, evidence_text)
-
-    except Exception as e:
-        print(f"Group processing failed: {str(e)}")
-        return ""
-
-
-async def get_microfacts(text: str):
-    """Get microfacts for a given text using Factiverse API.
+async def claim_search(text: str):
+    """Search for fact checking resources related to a given claim using Factiverse API.
 
     Args:
-        text: Text to analyze for microfacts
+        text: Text or claim to search for fact checks about
 
     Returns:
-        Dictionary containing entity information and microfacts
+        Dictionary containing claim search results with format:
 
     Raises:
         HTTPException: When API call fails or service is unavailable
     """
-    payload = {"lang": "", "text": text, "recommend_entities": True}
+    payload = {
+        "logging": False,
+        "lang": "en",
+        "query": text,
+        "reverseSortPubDate": True,
+        "size": 10,
+    }
 
     headers = {
         "Authorization": f"Bearer {FACTIVERSE_API_TOKEN}",
@@ -493,7 +466,7 @@ async def get_microfacts(text: str):
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 response = await client.post(
-                    f"{API_BASE_URL}/microfacts",
+                    f"{API_BASE_URL}/claim_search",
                     content=json.dumps(payload),
                     headers=headers,
                 )
@@ -509,7 +482,7 @@ async def get_microfacts(text: str):
                 continue
             raise HTTPException(
                 status_code=e.response.status_code,
-                detail=f"Microfacts service error: {e.response.text}",
+                detail=f"Claim search service error: {e.response.text}",
             )
         except httpx.RequestError as e:
             if attempt < max_retries:
@@ -525,3 +498,32 @@ async def get_microfacts(text: str):
             )
 
     return None
+
+def clean_claim_search_results(json_data: dict | None) -> list:
+    """Extract and structure relevant claim search results into a standardized format.
+    
+    Args:
+        json_data: The raw JSON response from the claim search API
+        
+    Returns:
+        A list of cleaned and structured fact check result entries
+    """
+    cleaned_results: list[dict] = []
+    
+    if json_data is None or "searchResults" not in json_data:
+        return cleaned_results
+    
+    for result in json_data.get("searchResults", [])[:10]:  
+        label = result.get("label")
+
+        if not result.get("claim") or not result.get("url") or label == "unknown":
+            continue
+        
+        fact_check_entry = {
+            "claim": result.get("claim", ""),
+            "url": result.get("url", ""),
+        }
+
+        cleaned_results.append(fact_check_entry)
+    
+    return cleaned_results
