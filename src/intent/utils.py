@@ -1,8 +1,8 @@
 """Intent detection for WhatsApp fact-checking bot."""
 
 import json
-import re
 import logging
+import re
 from typing import Any, Dict
 
 from src.config.prompts import get_prompt
@@ -35,13 +35,7 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
         intent_data = json.loads(intent_response)
         return intent_data
     except json.JSONDecodeError:
-        return {
-            "intent_type": "fact_check",
-            "confidence": 0.7,
-            "sentiment": "neutral",
-            "context_reference": False,
-            "url_present": False,
-        }
+        return {"intent_type": "fact_check", "short_message": True}
 
 
 async def handle_fact_check_intent(
@@ -61,15 +55,13 @@ async def handle_fact_check_intent(
 
     for claim in claims:
         try:
+            print(f"Claim: {claim}")
             fact_results = await stance_detection(claim)
-
             relevant_results = clean_facts(fact_results)
-
             evidence_text = json.dumps(relevant_results, ensure_ascii=False)
             final_evidence_text += f"{evidence_text}\n"
-
         except Exception as e:
-            logger.error(f"Stance detection failed: {str(e)}")
+            raise e
 
     fact_check_prompt = get_prompt(
         "fact_check",
@@ -78,11 +70,9 @@ async def handle_fact_check_intent(
     )
 
     return await generate(fact_check_prompt, final_evidence_text)
-    
 
-async def handle_bot_help_intent(
-    message_text: str, context: str
-) -> str:
+
+async def handle_bot_help_intent(message_text: str, context: str) -> str:
     """Generate response for bot help intent."""
     bot_help_prompt = get_prompt(
         "bot_help",
@@ -92,9 +82,7 @@ async def handle_bot_help_intent(
     return await generate(bot_help_prompt)
 
 
-async def handle_general_intent(
-    message_text: str, context: str
-) -> str:
+async def handle_general_intent(message_text: str, context: str) -> str:
     """Generate response for general conversation intent."""
     general_prompt = get_prompt(
         "general",
