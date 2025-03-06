@@ -49,17 +49,15 @@ async def handle_fact_check_intent(
         url = url_match.group(0)
 
         fact_results = await fact_check(url)
-        relevant_results = clean_facts(fact_results)
-        evidence_text = json.dumps(relevant_results, ensure_ascii=False)
-        final_evidence_text += f"{evidence_text}\n"
+        evidence = clean_facts(fact_results)
+        final_evidence_text += f"{evidence}\n"
 
     for claim in claims:
         try:
-            print(f"Claim: {claim}")
             fact_results = await stance_detection(claim)
-            relevant_results = clean_facts(fact_results)
-            evidence_text = json.dumps(relevant_results, ensure_ascii=False)
-            final_evidence_text += f"{evidence_text}\n"
+            evidence = clean_facts(fact_results)
+            print(evidence)
+            final_evidence_text += f"{evidence}\n"
         except Exception as e:
             raise e
 
