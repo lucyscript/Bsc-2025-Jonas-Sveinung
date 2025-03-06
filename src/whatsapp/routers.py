@@ -1,9 +1,9 @@
 """Enhanced WhatsApp Cloud API integration with Factiverse fact-checking."""
 
-import json
 import logging
 import os
 import time
+import unicodedata
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -79,10 +79,28 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     message_id = message.get("id", "")
 
                     if message_type == "text":
-                        message_text = json.dumps(
-                            message.get("text", {}).get("body", ""),
-                            ensure_ascii=False,
-                        )[1:-1]
+                        raw_text = message.get("text", {}).get("body", "")
+
+                        message_text = unicodedata.normalize(
+                            "NFKD", raw_text
+                        ).replace('"', "'")
+
+                        replacements = {
+                            "\xa0": " ",  # Non-breaking space
+                            "\u2018": "'",  # Left single quote
+                            "\u2019": "'",  # Right single quote
+                            "\u201c": '"',  # Left double quote
+                            "\u201d": '"',  # Right double quote
+                            "\u2013": "-",  # En dash
+                            "\u2014": "--",  # Em dash
+                            "\u2026": "...",  # Ellipsis
+                        }
+
+                        for char, replacement in replacements.items():
+                            message_text = message_text.replace(
+                                char, replacement
+                            )
+
                         print(f"User: {message_text}")
                         context_info = message.get("context", {})
 
@@ -102,7 +120,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                 )
 
                                 background_tasks.add_task(
-                                    handle_message_with_intent,
+                                    handle_message_reply,
                                     phone_number,
                                     message_id,
                                     message_text,
@@ -190,34 +208,8 @@ async def handle_message_with_intent(
 ):
     """Process messages using intent detection."""
     try:
-        raw_response = await detect_intent(message_text, context)
-        print(f"raw_response: {raw_response}")
-        clean_response = str(raw_response)
-        intent_data = {}
-
-        try:
-            if isinstance(raw_response, dict):
-                intent_data = raw_response
-            else:
-                intent_data = json.loads(raw_response)
-
-        except (json.JSONDecodeError, TypeError) as e:
-            logger.warning(f"Primary parsing failed, attempting cleanup: {e}")
-            try:
-                clean_response = (
-                    str(raw_response)
-                    .replace("'", '"')
-                    .replace("None", "null")
-                    .replace("True", "true")
-                    .replace("False", "false")
-                )
-                intent_data = json.loads(clean_response, strict=False)
-            except json.JSONDecodeError:
-                logger.error(f"Final parsing failed for: {clean_response}")
-                intent_data = {
-                    "intent_type": "fact_check",
-                    "short_message": "true",
-                }
+        intent_data = await detect_intent(message_text, context)
+        print(intent_data)
 
         intent_type = intent_data.get("intent_type", "fact_check")
         short_message = intent_data.get("short_message", False)
@@ -233,8 +225,7 @@ async def handle_message_with_intent(
                     phone_number, message_id, message_text, context
                 )
                 return
-
-        if intent_type == "fact_check" and short_message is False:
+        elif intent_type == "fact_check" and short_message is False:
             claims = await detect_claims(message_text)
             print(f"claims: {claims}")
             if not claims:
@@ -255,12 +246,57 @@ async def handle_message_with_intent(
                         phone_number, message_id, message_text, context
                     )
                     return
-
-        if intent_type == "bot_help":
+        elif intent_type == "bot_help":
             response = await handle_bot_help_intent(message_text, context)
-
-        if intent_type == "general":
+        elif intent_type == "general":
             response = await handle_general_intent(message_text, context)
+        else:
+            response = await handle_claim_suggestions(
+                phone_number, message_id, message_text, context
+            )
+
+        sent_message = await send_whatsapp_message(
+            phone_number=phone_number,
+            message=response,
+            reply_to=message_id,
+        )
+
+        if phone_number not in message_context:
+            message_context[phone_number] = []
+        message_context[phone_number].append(f"Bot: {response}\n")
+
+        if sent_message and "messages" in sent_message:
+            bot_message_id = sent_message["messages"][0]["id"]
+            message_id_to_bot_message[bot_message_id] = response
+
+    except Exception as e:
+        logger.error(f"Intent processing failed: {str(e)}")
+        error_msg = "⚠️ Temporary service issue. Please try again!"
+        sent_message = await send_whatsapp_message(
+            phone_number, error_msg, message_id
+        )
+        message_context[phone_number].append(f"Bot: {error_msg}\n")
+
+        if sent_message and "messages" in sent_message:
+            bot_message_id = sent_message["messages"][0]["id"]
+            message_id_to_bot_message[bot_message_id] = error_msg
+
+
+async def handle_message_reply(
+    phone_number: str, message_id: str, message_text: str, context: str
+):
+    """Process messages using intent detection."""
+    try:
+        try:
+            response = await handle_fact_check_intent(
+                message_text, context, [message_text]
+            )
+        except Exception as e:
+            logger.warning(f"Failed to handle fact check intent: {e}")
+            await handle_claim_suggestions(
+                phone_number, message_id, message_text, context
+            )
+            return
 
         sent_message = await send_whatsapp_message(
             phone_number=phone_number,
@@ -374,15 +410,17 @@ async def handle_claim_suggestions(
     top_suggestions = []
     for result in cleaned_claim_suggestions[:3]:
         if "claim" in result:
-            top_suggestions.append(result["claim"])
+            top_suggestions.append(result["claim"].replace('"', "'"))
 
-    suggestions_text = json.dumps(top_suggestions)
     suggestion_prompt = get_prompt(
         "claim_suggestion",
         message_text=message_text,
         context=context,
     )
-    tailored_response = await generate(suggestion_prompt, suggestions_text)
+
+    suggestions = "\n".join(top_suggestions)
+
+    tailored_response = await generate(suggestion_prompt, suggestions)
 
     sent_message = await send_whatsapp_message(
         phone_number,

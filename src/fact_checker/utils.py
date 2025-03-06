@@ -1,7 +1,6 @@
 """Fact-checking utility for verifying claims using Factiverse API."""
 
 import asyncio
-import json
 import logging
 import os
 
@@ -13,7 +12,7 @@ load_dotenv()
 
 API_BASE_URL = "https://dev.factiverse.ai/v1"
 FACTIVERSE_API_TOKEN = os.getenv("FACTIVERSE_API_TOKEN")
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = 30
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ async def generate(prompt: str, text: str = "") -> str:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             response = await client.post(
                 f"{API_BASE_URL}/generate",
-                content=json.dumps(payload),
+                json=payload,
                 headers=headers,
             )
             response.raise_for_status()
@@ -59,6 +58,7 @@ async def stance_detection(claim: str):
     Raises:
         HTTPException: When API call fails or service is unavailable
     """
+    print(f"Stance detection claim: {claim}")
     payload = {
         "claim": claim,
     }
@@ -68,45 +68,19 @@ async def stance_detection(claim: str):
         "Content-Type": "application/json",
     }
 
-    max_retries = 3
-    retry_delay = 1
-
-    for attempt in range(max_retries + 1):
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.post(
-                    f"{API_BASE_URL}/stance_detection",
-                    content=json.dumps(payload),
-                    headers=headers,
-                )
-                response.raise_for_status()
-                return response.json()
-
-        except httpx.HTTPStatusError as e:
-            if attempt < max_retries and e.response.status_code >= 500:
-                print(
-                    f"Retry attempt {attempt + 1}/{max_retries} for 5xx error"
-                )
-                await asyncio.sleep(retry_delay * (2**attempt))
-                continue
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Fact check service error: {e.response.text}",
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            print(f"Stance detection request: {payload}")
+            response = await client.post(
+                f"{API_BASE_URL}/stance_detection",
+                json=payload,
+                headers=headers,
             )
-        except httpx.RequestError as e:
-            if attempt < max_retries:
-                print(
-                    f"Retry attempt {attempt + 1}/{max_retries} "
-                    "for connection error"
-                )
-                await asyncio.sleep(retry_delay * (2**attempt))
-                continue
-            raise HTTPException(
-                status_code=503,
-                detail=f"Service temporarily unavailable: {str(e)}",
-            )
-
-    return None
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logger.error(f"Unexpected error in stance detection: {str(e)}")
+        raise e
 
 
 async def fact_check(url: str):
@@ -134,45 +108,21 @@ async def fact_check(url: str):
         "Content-Type": "application/json",
     }
 
-    max_retries = 3
-    retry_delay = 1
-
-    for attempt in range(max_retries + 1):
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.post(
-                    f"{API_BASE_URL}/fact_check",
-                    content=json.dumps(payload),
-                    headers=headers,
-                )
-                response.raise_for_status()
-                return response.json()
-
-        except httpx.HTTPStatusError as e:
-            if attempt < max_retries and e.response.status_code >= 500:
-                print(
-                    f"Retry attempt {attempt + 1}/{max_retries} for 5xx error"
-                )
-                await asyncio.sleep(retry_delay * (2**attempt))
-                continue
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Fact check service error: {e.response.text}",
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            response = await client.post(
+                f"{API_BASE_URL}/fact_check",
+                json=payload,
+                headers=headers,
             )
-        except httpx.RequestError as e:
-            if attempt < max_retries:
-                print(
-                    f"Retry attempt {attempt + 1}/{max_retries} for "
-                    "connection error"
-                )
-                await asyncio.sleep(retry_delay * (2**attempt))
-                continue
-            raise HTTPException(
-                status_code=503,
-                detail=f"Service temporarily unavailable: {str(e)}",
-            )
+            response.raise_for_status()
+            return response.json()
 
-    return None
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=f"Fact check service error: {e.response.text}",
+        )
 
 
 async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
@@ -203,7 +153,7 @@ async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             response = await client.post(
                 f"{API_BASE_URL}/claim_detection",
-                content=json.dumps(payload),
+                json=payload,
                 headers=headers,
             )
             response.raise_for_status()
@@ -243,8 +193,10 @@ def clean_facts(json_data: dict | None) -> list:
     ):
         claim_text = json_data.get("claim", "")
         evidence_list = json_data.get("evidence", [])
-        summary = json_data.get("summary", "")
-        fix = json_data.get("fix", "")
+        summary = " ".join(
+            str(item) for item in json_data.get("summary", [])
+        ).replace('"', "'")
+        fix = json_data.get("fix", "").replace('"', "'")
 
         final_verdict = "Uncertain"
         if json_data.get("finalPrediction") is not None:
@@ -296,10 +248,10 @@ def clean_facts(json_data: dict | None) -> list:
         )
     else:
         for claim in json_data.get("claims", []):
-            claim_text = claim.get("claim", "")
+            claim_text = claim.get("claim", "").replace('"', "'")
             final_prediction = claim.get("finalPrediction")
-            summary = claim.get("summary", "")
-            fix = claim.get("fix", "")
+            summary = claim.get("summary", "").replace('"', "'")
+            fix = claim.get("fix", "").replace('"', "'")
             final_verdict = "Uncertain"
             if final_prediction is not None:
                 final_verdict = (
@@ -383,7 +335,7 @@ async def claim_search(text: str):
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 response = await client.post(
                     f"{API_BASE_URL}/claim_search",
-                    content=json.dumps(payload),
+                    json=payload,
                     headers=headers,
                 )
                 response.raise_for_status()
