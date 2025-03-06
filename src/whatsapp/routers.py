@@ -221,9 +221,11 @@ async def handle_message_with_intent(
                 )
             except Exception as e:
                 logger.warning(f"Failed to handle fact check intent: {e}")
-                await handle_claim_suggestions(
-                    phone_number, message_id, message_text, context
+                response = (
+                    "Sorry, fact-checking failed. Please try again later."
                 )
+                await send_whatsapp_message(phone_number, response, message_id)
+
                 return
         elif intent_type == "fact_check" and short_message is False:
             claims = await detect_claims(message_text)
@@ -242,8 +244,11 @@ async def handle_message_with_intent(
                     logger.warning(
                         "Failed to handle fact check intent with claims"
                     )
-                    await handle_claim_suggestions(
-                        phone_number, message_id, message_text, context
+                    response = (
+                        "Sorry, fact-checking failed. Please try again later."
+                    )
+                    await send_whatsapp_message(
+                        phone_number, response, message_id
                     )
                     return
         elif intent_type == "bot_help":
