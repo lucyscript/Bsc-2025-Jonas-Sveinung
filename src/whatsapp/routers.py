@@ -23,7 +23,6 @@ from src.image.utils import (
 )
 from src.intent.utils import (
     detect_intent,
-    handle_bot_help_intent,
     handle_fact_check_intent,
     handle_general_intent,
 )
@@ -81,9 +80,11 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     if message_type == "text":
                         raw_text = message.get("text", {}).get("body", "")
 
-                        message_text = unicodedata.normalize(
-                            "NFKD", raw_text
-                        ).replace('"', "'")
+                        message_text = (
+                            unicodedata.normalize("NFKD", raw_text)
+                            .replace('"', "'")
+                            .strip()
+                        )
 
                         replacements = {
                             "\xa0": " ",  # Non-breaking space
@@ -221,12 +222,7 @@ async def handle_message_with_intent(
                 )
             except Exception as e:
                 logger.warning(f"Failed to handle fact check intent: {e}")
-                response = (
-                    "Sorry, fact-checking failed. Please try again later."
-                )
-                await send_whatsapp_message(phone_number, response, message_id)
-
-                return
+                response = "⚠️ Temporary service issue. Please try again!"
         elif intent_type == "fact_check" and short_message is False:
             claims = await detect_claims(message_text)
             print(f"claims: {claims}")
@@ -240,28 +236,26 @@ async def handle_message_with_intent(
                     response = await handle_fact_check_intent(
                         message_text, context, claims
                     )
-                except Exception:
+                except Exception as e:
                     logger.warning(
-                        "Failed to handle fact check intent with claims"
+                        f"Failed to handle fact check intent with claims: {e}"
                     )
-                    response = (
-                        "Sorry, fact-checking failed. Please try again later."
-                    )
-                    await send_whatsapp_message(
-                        phone_number, response, message_id
-                    )
-                    return
-        elif intent_type == "bot_help":
-            response = await handle_bot_help_intent(message_text, context) or ""
+                    response = "⚠️ Temporary service issue. Please try again!"
         elif intent_type == "general":
-            response = await handle_general_intent(message_text, context) or ""
+            try:
+                response = await handle_general_intent(message_text, context)
+            except Exception as e:
+                logger.warning(f"Failed to handle general intent: {e}")
+                response = "⚠️ Temporary service issue. Please try again!"
         else:
-            response = (
+            try:
                 await handle_claim_suggestions(
                     phone_number, message_id, message_text, context
                 )
-                or ""
-            )
+                return
+            except Exception as e:
+                logger.warning(f"Failed to handle claim suggestions: {e}")
+                response = "⚠️ Temporary service issue. Please try again!"
 
         sent_message = await send_whatsapp_message(
             phone_number=phone_number,
@@ -277,8 +271,8 @@ async def handle_message_with_intent(
             bot_message_id = sent_message["messages"][0]["id"]
             message_id_to_bot_message[bot_message_id] = response
 
-    except Exception as e:
-        logger.error(f"Intent processing failed: {str(e)}")
+    except Exception:
+        logger.error("Intent processing failed")
         error_msg = "⚠️ Temporary service issue. Please try again!"
         sent_message = await send_whatsapp_message(
             phone_number, error_msg, message_id
@@ -301,10 +295,7 @@ async def handle_message_reply(
             )
         except Exception as e:
             logger.warning(f"Failed to handle fact check intent: {e}")
-            await handle_claim_suggestions(
-                phone_number, message_id, message_text, context
-            )
-            return
+            response = "Sorry, fact-checking failed. Please try again later."
 
         sent_message = await send_whatsapp_message(
             phone_number=phone_number,
@@ -320,8 +311,8 @@ async def handle_message_reply(
             bot_message_id = sent_message["messages"][0]["id"]
             message_id_to_bot_message[bot_message_id] = response
 
-    except Exception as e:
-        logger.error(f"Intent processing failed: {str(e)}")
+    except Exception:
+        logger.error("Intent processing failed")
         error_msg = "⚠️ Temporary service issue. Please try again!"
         sent_message = await send_whatsapp_message(
             phone_number, error_msg, message_id
