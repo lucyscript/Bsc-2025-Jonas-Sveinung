@@ -12,7 +12,7 @@ load_dotenv()
 
 API_BASE_URL = "https://dev.factiverse.ai/v1"
 FACTIVERSE_API_TOKEN = os.getenv("FACTIVERSE_API_TOKEN")
-REQUEST_TIMEOUT = 30
+REQUEST_TIMEOUT = 1000
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,6 @@ async def stance_detection(claim: str):
     Raises:
         HTTPException: When API call fails or service is unavailable
     """
-    print(f"Stance detection claim: {claim}")
     payload = {
         "claim": claim,
     }
@@ -70,7 +69,6 @@ async def stance_detection(claim: str):
 
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            print(f"Stance detection request: {payload}")
             response = await client.post(
                 f"{API_BASE_URL}/stance_detection",
                 json=payload,
@@ -80,7 +78,7 @@ async def stance_detection(claim: str):
             return response.json()
     except Exception as e:
         logger.error(f"Unexpected error in stance detection: {str(e)}")
-        raise e
+        raise
 
 
 async def fact_check(url: str):
@@ -186,76 +184,26 @@ def clean_facts(json_data: dict | None) -> list:
 
     if json_data is None:
         return cleaned_results
+    try:
+        if (
+            "collection" in json_data
+            and json_data["collection"] == "stance_detection"
+        ):
+            evidence_list = json_data.get("evidence", [])
+            claim_text = json_data.get("claim", "")
+            if not evidence_list:
+                return [{"error": f"No evidence found for claim: {claim_text}"}]
+            summary = " ".join(
+                str(item) for item in json_data.get("summary", [])
+            ).replace('"', "'")
+            fix = json_data.get("fix", "").replace('"', "'")
 
-    if (
-        "collection" in json_data
-        and json_data["collection"] == "stance_detection"
-    ):
-        claim_text = json_data.get("claim", "")
-        evidence_list = json_data.get("evidence", [])
-        summary = " ".join(
-            str(item) for item in json_data.get("summary", [])
-        ).replace('"', "'")
-        fix = json_data.get("fix", "").replace('"', "'")
-
-        final_verdict = "Uncertain"
-        if json_data.get("finalPrediction") is not None:
-            final_verdict = (
-                "Incorrect"
-                if json_data.get("finalPrediction") == 0
-                else "Correct"
-            )
-
-        if final_verdict == "Incorrect":
-            confidence = round(
-                (1 - (json_data.get("finalScore") or 0)) * 100, 2
-            )
-        else:
-            confidence = round((json_data.get("finalScore") or 0) * 100, 2)
-
-        supporting_evidence = []
-        refuting_evidence = []
-
-        for evidence in evidence_list:
-            label = evidence.get("labelDescription", "")
-            if label not in ["SUPPORTS", "REFUTES"]:
-                continue
-
-            evidence_entry = {
-                "labelDescription": label,
-                "domain_name": evidence.get("domainName", ""),
-                "domainReliability": evidence.get("domain_reliability", {}).get(
-                    "Reliability", "Unknown"
-                ),
-                "url": evidence.get("url", ""),
-            }
-
-            if label == "SUPPORTS":
-                supporting_evidence.append(evidence_entry)
-            else:
-                refuting_evidence.append(evidence_entry)
-
-        cleaned_results.append(
-            {
-                "claim": claim_text,
-                "verdict": final_verdict,
-                "confidence_percentage": confidence,
-                "summary": summary,
-                "fix": fix,
-                "supporting_evidence": supporting_evidence,
-                "refuting_evidence": refuting_evidence,
-            }
-        )
-    else:
-        for claim in json_data.get("claims", []):
-            claim_text = claim.get("claim", "").replace('"', "'")
-            final_prediction = claim.get("finalPrediction")
-            summary = claim.get("summary", "").replace('"', "'")
-            fix = claim.get("fix", "").replace('"', "'")
             final_verdict = "Uncertain"
-            if final_prediction is not None:
+            if json_data.get("finalPrediction") is not None:
                 final_verdict = (
-                    "Correct" if final_prediction == 1 else "Incorrect"
+                    "Incorrect"
+                    if json_data.get("finalPrediction") == 0
+                    else "Correct"
                 )
 
             if final_verdict == "Incorrect":
@@ -268,7 +216,6 @@ def clean_facts(json_data: dict | None) -> list:
             supporting_evidence = []
             refuting_evidence = []
 
-            evidence_list = claim.get("evidence") or []
             for evidence in evidence_list:
                 label = evidence.get("labelDescription", "")
                 if label not in ["SUPPORTS", "REFUTES"]:
@@ -276,9 +223,10 @@ def clean_facts(json_data: dict | None) -> list:
 
                 evidence_entry = {
                     "labelDescription": label,
-                    "reliability": evidence.get("domain_reliability", {}).get(
-                        "Reliability", "Unknown"
-                    ),
+                    "domain_name": evidence.get("domainName", ""),
+                    "domainReliability": evidence.get(
+                        "domain_reliability", {}
+                    ).get("Reliability", "Unknown"),
                     "url": evidence.get("url", ""),
                 }
 
@@ -298,8 +246,75 @@ def clean_facts(json_data: dict | None) -> list:
                     "refuting_evidence": refuting_evidence,
                 }
             )
+        else:
+            for text_item in json_data.get("text", []):
+                evidence_list = text_item.get("evidence", [])
+                if not evidence_list:
+                    cleaned_results.append({"error": "No evidence found"})
+                    continue
+                claim_text = text_item.get("claim", "").replace('"', "'")
+                final_prediction = text_item.get("finalPrediction")
+                summary = text_item.get("summary", "")
+                fix = text_item.get("fix", "")
 
-    return cleaned_results
+                if summary:
+                    summary = summary.replace('"', "'")
+                if fix:
+                    fix = fix.replace('"', "'")
+
+                final_verdict = "Uncertain"
+                if final_prediction is not None:
+                    final_verdict = (
+                        "Correct" if final_prediction == 1 else "Incorrect"
+                    )
+
+                if final_verdict == "Incorrect":
+                    confidence = round(
+                        (1 - (text_item.get("finalScore") or 0)) * 100, 2
+                    )
+                else:
+                    confidence = round(
+                        (text_item.get("finalScore") or 0) * 100, 2
+                    )
+
+                supporting_evidence = []
+                refuting_evidence = []
+
+                for evidence in evidence_list:
+                    label = evidence.get("labelDescription", "")
+                    if label not in ["SUPPORTS", "REFUTES"]:
+                        continue
+
+                    evidence_entry = {
+                        "labelDescription": label,
+                        "reliability": evidence.get(
+                            "domain_reliability", {}
+                        ).get("Reliability", "Unknown"),
+                        "url": evidence.get("url", ""),
+                    }
+
+                    if label == "SUPPORTS":
+                        supporting_evidence.append(evidence_entry)
+                    else:
+                        refuting_evidence.append(evidence_entry)
+
+                cleaned_results.append(
+                    {
+                        "claim": claim_text,
+                        "verdict": final_verdict,
+                        "confidence_percentage": confidence,
+                        "summary": summary,
+                        "fix": fix,
+                        "supporting_evidence": supporting_evidence,
+                        "refuting_evidence": refuting_evidence,
+                    }
+                )
+
+        return cleaned_results
+
+    except Exception as e:
+        logger.error(f"Error cleaning facts: {str(e)}")
+        return []
 
 
 async def claim_search(text: str):

@@ -56,10 +56,10 @@ async def handle_fact_check_intent(
         try:
             fact_results = await stance_detection(claim)
             evidence = clean_facts(fact_results)
-            print(evidence)
             final_evidence_text += f"{evidence}\n"
-        except Exception as e:
-            raise e
+        except Exception:
+            logger.log(logging.ERROR, "Error in for loop")
+            raise
 
     fact_check_prompt = get_prompt(
         "fact_check",
@@ -68,16 +68,6 @@ async def handle_fact_check_intent(
     )
 
     return await generate(fact_check_prompt, final_evidence_text)
-
-
-async def handle_bot_help_intent(message_text: str, context: str) -> str:
-    """Generate response for bot help intent."""
-    bot_help_prompt = get_prompt(
-        "bot_help",
-        message_text=message_text,
-        context=context,
-    )
-    return await generate(bot_help_prompt)
 
 
 async def handle_general_intent(message_text: str, context: str) -> str:
