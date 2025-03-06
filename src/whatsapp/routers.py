@@ -247,12 +247,15 @@ async def handle_message_with_intent(
                     )
                     return
         elif intent_type == "bot_help":
-            response = await handle_bot_help_intent(message_text, context)
+            response = await handle_bot_help_intent(message_text, context) or ""
         elif intent_type == "general":
-            response = await handle_general_intent(message_text, context)
+            response = await handle_general_intent(message_text, context) or ""
         else:
-            response = await handle_claim_suggestions(
-                phone_number, message_id, message_text, context
+            response = (
+                await handle_claim_suggestions(
+                    phone_number, message_id, message_text, context
+                )
+                or ""
             )
 
         sent_message = await send_whatsapp_message(
