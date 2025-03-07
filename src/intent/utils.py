@@ -3,7 +3,7 @@
 import json
 import logging
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from src.config.prompts import get_prompt
 from src.fact_checker.utils import (
@@ -39,35 +39,63 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
 
 
 async def handle_fact_check_intent(
-    message_text: str, context: str, claims: list = []
-) -> str:
-    """Generate response for fact check intent."""
+    message_text: str, context: str, claims: list = [], is_reply: bool = False
+) -> Tuple[str, str, bool]:
+    """Generate response for fact check intent.
+
+    Args:
+        message_text: The user's message text
+        context: Previous conversation context
+        claims: List of claims to fact check
+        is_reply: Whether this is a reply to a previously suggested claim
+
+    Returns:
+        A tuple containing (prompt, evidence_text, has_evidence)
+    """
     url_match = re.search(r"https?://\S+", message_text)
     final_evidence_text = ""
+    has_evidence = False
 
     if url_match:
         url = url_match.group(0)
 
         fact_results = await fact_check(url)
         evidence = clean_facts(fact_results)
+
+        if any("error" not in item for item in evidence):
+            has_evidence = True
+
         final_evidence_text += f"{evidence}\n"
 
     for claim in claims:
         try:
+            logger.log(logging.INFO, f"Handling claim: {claim}")
             fact_results = await stance_detection(claim)
             evidence = clean_facts(fact_results)
+
+            if any("error" not in item for item in evidence):
+                has_evidence = True
+
             final_evidence_text += f"{evidence}\n"
         except Exception:
             logger.log(logging.ERROR, "Error in for loop")
             raise
 
-    fact_check_prompt = get_prompt(
-        "fact_check",
-        message_text=message_text,
-        context=context,
-    )
+    if is_reply:
+        fact_check_prompt = get_prompt(
+            "fact_check_reply",
+            message_text=message_text,
+            claim=claims[0],
+            context=context,
+        )
+    else:
+        fact_check_prompt = get_prompt(
+            "fact_check",
+            message_text=message_text,
+            context=context,
+        )
 
-    return await generate(fact_check_prompt, final_evidence_text)
+    return fact_check_prompt, final_evidence_text, has_evidence
 
 
 async def handle_general_intent(message_text: str, context: str) -> str:
