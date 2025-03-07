@@ -4,7 +4,7 @@ import logging
 import os
 import time
 import unicodedata
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -441,11 +441,11 @@ async def handle_image(phone_number: str, message_id: str, image_id: str):
 
 
 async def handle_claim_suggestions(
-    phone_number: str,
     message_id: str,
+    phone_number: str,
     message_text: str,
     context: str,
-    claim: str = None,
+    claim: Optional[str] = None,
 ):
     """Handle claim suggestions when no direct claims are detected.
 
