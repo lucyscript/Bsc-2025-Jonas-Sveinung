@@ -254,13 +254,8 @@ def clean_facts(json_data: dict | None) -> list:
                     continue
                 claim_text = text_item.get("claim", "").replace('"', "'")
                 final_prediction = text_item.get("finalPrediction")
-                summary = text_item.get("summary", "")
-                fix = text_item.get("fix", "")
-
-                if summary:
-                    summary = summary.replace('"', "'")
-                if fix:
-                    fix = fix.replace('"', "'")
+                summary = text_item.get("summary", "").replace('"', "'")
+                fix = text_item.get("fix", "").replace('"', "'")
 
                 final_verdict = "Uncertain"
                 if final_prediction is not None:
@@ -317,7 +312,7 @@ def clean_facts(json_data: dict | None) -> list:
         return []
 
 
-async def claim_search(text: str):
+async def claim_search():
     """Search for fact checking resources related to a given claim.
 
     Args:
@@ -332,9 +327,9 @@ async def claim_search(text: str):
     payload = {
         "logging": False,
         "lang": "en",
-        "query": text,
+        "query": "",
         "reverseSortPubDate": True,
-        "size": 10,
+        "size": 25,
     }
 
     headers = {
@@ -397,19 +392,22 @@ def clean_claim_search_results(json_data: dict | None) -> list:
     if json_data is None or "searchResults" not in json_data:
         return cleaned_results
 
-    for result in json_data.get("searchResults", [])[:10]:
+    for result in json_data.get("searchResults", [])[:25]:
+        claim = result.get("claim")
         label = result.get("label")
 
         if (
-            not result.get("claim")
-            or not result.get("url")
+            not claim
+            or not label
+            or any(word in claim.lower() for word in ["photo", "video"])
             or label == "unknown"
+            or not result.get("domain")
         ):
             continue
 
         fact_check_entry = {
             "claim": result.get("claim", ""),
-            "url": result.get("url", ""),
+            "domain": result.get("domain", ""),
         }
 
         cleaned_results.append(fact_check_entry)
