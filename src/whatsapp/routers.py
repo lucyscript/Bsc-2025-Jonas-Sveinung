@@ -221,13 +221,16 @@ async def handle_message_with_intent(
 
         intent_type = intent_data.get("intent_type", "fact_check")
         short_message = intent_data.get("short_message", False)
+        split_claims = intent_data.get(
+            "split_claims"
+        )  # New field for compound statements
 
         if intent_type == "fact_check" and short_message is True:
             try:
-                # Fix type assignment
+                claims = split_claims if split_claims else [message_text]
                 fact_check_result: Tuple[str, str, bool] = (
                     await handle_fact_check_intent(
-                        message_text, context, [message_text]
+                        message_text, context, claims
                     )
                 )
                 prompt, evidence_data, has_evidence = fact_check_result
@@ -259,7 +262,6 @@ async def handle_message_with_intent(
                         )
                     )
                     prompt, evidence_data, has_evidence = fact_check_result2
-
                     if not has_evidence:
                         response = await handle_claim_suggestions(
                             phone_number, message_id, message_text, context
