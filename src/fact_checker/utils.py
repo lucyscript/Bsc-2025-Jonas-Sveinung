@@ -329,7 +329,7 @@ async def claim_search():
         "lang": "en",
         "query": "",
         "reverseSortPubDate": True,
-        "size": 25,
+        "size": 100,
     }
 
     headers = {
@@ -392,14 +392,16 @@ def clean_claim_search_results(json_data: dict | None) -> list:
     if json_data is None or "searchResults" not in json_data:
         return cleaned_results
 
-    for result in json_data.get("searchResults", [])[:25]:
+    for result in json_data.get("searchResults", []):
         claim = result.get("claim")
         label = result.get("label")
 
         if (
             not claim
             or not label
-            or any(word in claim.lower() for word in ["photo", "video"])
+            or any(
+                word in claim.lower() for word in ["photo", "video", "image"]
+            )
             or label == "unknown"
             or not result.get("domain")
         ):
