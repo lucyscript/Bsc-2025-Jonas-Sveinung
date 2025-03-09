@@ -78,6 +78,9 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
 
+                    if phone_number not in message_context:
+                        message_context[phone_number] = []
+
                     if message_type == "text":
                         raw_text = message.get("text", {}).get("body", "")
 
@@ -111,12 +114,8 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             if replied_to_id in message_id_to_bot_message:
                                 selected_claim = message_id_to_bot_message[
                                     replied_to_id
-                                ]
+                                ].replace('"', "'")
 
-                                message_context[phone_number].append(
-                                    f"User replied to '{selected_claim}' "
-                                    f"with '{message_text}'\n"
-                                )
                                 context = "\n".join(
                                     message_context[phone_number]
                                 )
@@ -136,8 +135,6 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                 )
                                 continue
 
-                        if phone_number not in message_context:
-                            message_context[phone_number] = []
                         message_context[phone_number].append(
                             f"User: {message_text}\n"
                         )
@@ -182,7 +179,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             )
                         else:
                             error_msg = "No image ID found. Please try again."
-                            await send_whatsapp_message(
+                            sent_message = await send_whatsapp_message(
                                 phone_number,
                                 error_msg,
                                 message_id,
@@ -190,11 +187,19 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             message_context[phone_number].append(
                                 f"Bot: {error_msg}\n"
                             )
+                            if sent_message and "messages" in sent_message:
+                                bot_message_id = sent_message["messages"][0][
+                                    "id"
+                                ]
+                                message_id_to_bot_message[bot_message_id] = (
+                                    error_msg
+                                )
+
                     else:
                         error_msg = (
                             "Sorry, I can only process text and image messages."
                         )
-                        await send_whatsapp_message(
+                        sent_message = await send_whatsapp_message(
                             phone_number,
                             error_msg,
                             message_id,
@@ -202,6 +207,11 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         message_context[phone_number].append(
                             f"Bot: {error_msg}\n"
                         )
+                        if sent_message and "messages" in sent_message:
+                            bot_message_id = sent_message["messages"][0]["id"]
+                            message_id_to_bot_message[bot_message_id] = (
+                                error_msg
+                            )
 
                 except (KeyError, IndexError):
                     continue
@@ -237,7 +247,7 @@ async def handle_message_with_intent(
 
                 if not has_evidence:
                     response = await handle_claim_suggestions(
-                        phone_number, message_id, message_text, context
+                        message_id, phone_number, message_text, context
                     )
                     return
                 else:
@@ -250,7 +260,7 @@ async def handle_message_with_intent(
             print(f"claims: {claims}")
             if not claims:
                 await handle_claim_suggestions(
-                    phone_number, message_id, message_text, context
+                    message_id, phone_number, message_text, context
                 )
                 return
             else:
@@ -264,7 +274,7 @@ async def handle_message_with_intent(
                     prompt, evidence_data, has_evidence = fact_check_result2
                     if not has_evidence:
                         response = await handle_claim_suggestions(
-                            phone_number, message_id, message_text, context
+                            message_id, phone_number, message_text, context
                         )
                         return
                     else:
@@ -283,7 +293,7 @@ async def handle_message_with_intent(
         else:
             try:
                 await handle_claim_suggestions(
-                    phone_number, message_id, message_text, context
+                    message_id, phone_number, message_text, context
                 )
                 return
             except Exception as e:
@@ -296,8 +306,6 @@ async def handle_message_with_intent(
             reply_to=message_id,
         )
 
-        if phone_number not in message_context:
-            message_context[phone_number] = []
         message_context[phone_number].append(f"Bot: {response}\n")
 
         if sent_message and "messages" in sent_message:
@@ -328,7 +336,6 @@ async def handle_message_reply(
     try:
         try:
             logger.log(logging.INFO, f"Handling message reply: {message_text}")
-            # Fix type assignment
             fact_check_result: Tuple[str, str, bool] = (
                 await handle_fact_check_intent(
                     message_text, context, [claim], is_reply=True
@@ -338,7 +345,7 @@ async def handle_message_reply(
 
             if not has_evidence:
                 response = await handle_claim_suggestions(
-                    phone_number, message_id, message_text, context, claim
+                    message_id, phone_number, message_text, context, claim
                 )
                 return
             else:
@@ -353,8 +360,6 @@ async def handle_message_reply(
             reply_to=message_id,
         )
 
-        if phone_number not in message_context:
-            message_context[phone_number] = []
         message_context[phone_number].append(f"Bot: {response}\n")
 
         if sent_message and "messages" in sent_message:
@@ -411,8 +416,6 @@ async def handle_image(phone_number: str, message_id: str, image_id: str):
 
             return
 
-        if phone_number not in message_context:
-            message_context[phone_number] = []
         message_context[phone_number].append(
             f"User uploaded an image containing this text: {extracted_text}\n"
         )
@@ -433,8 +436,6 @@ async def handle_image(phone_number: str, message_id: str, image_id: str):
             error_msg,
             message_id,
         )
-        if phone_number not in message_context:
-            message_context[phone_number] = []
         message_context[phone_number].append(f"Bot: {error_msg}\n")
 
         if sent_message and "messages" in sent_message:
@@ -491,8 +492,6 @@ async def handle_claim_suggestions(
         tailored_response,
         message_id,
     )
-    if phone_number not in message_context:
-        message_context[phone_number] = []
     message_context[phone_number].append(f"Bot: {tailored_response}\n")
 
     if sent_message and "messages" in sent_message:
@@ -506,8 +505,6 @@ async def handle_claim_suggestions(
             f"{number_emoji} {suggestion}",
             message_id,
         )
-        if phone_number not in message_context:
-            message_context[phone_number] = []
         message_context[phone_number].append(
             f"Bot: {number_emoji} {suggestion}\n"
         )
