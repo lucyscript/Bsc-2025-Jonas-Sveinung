@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import random
 
 import httpx
 from dotenv import load_dotenv
@@ -387,17 +388,14 @@ def clean_claim_search_results(json_data: dict | None) -> list:
     Returns:
         A list of cleaned and structured fact check result entries
     """
-    cleaned_results: list[dict] = []
+    candidate_results: list[dict] = []
 
     if json_data is None or "searchResults" not in json_data:
-        return cleaned_results
+        return candidate_results
 
     for result in json_data.get("searchResults", []):
         claim = result.get("claim")
         label = result.get("label")
-
-        if len(cleaned_results) == 3:
-            break
 
         if (
             not claim
@@ -415,6 +413,9 @@ def clean_claim_search_results(json_data: dict | None) -> list:
             "domain": result.get("domain", ""),
         }
 
-        cleaned_results.append(fact_check_entry)
+        candidate_results.append(fact_check_entry)
 
-    return cleaned_results
+    if len(candidate_results) <= 3:
+        return candidate_results
+    else:
+        return random.sample(candidate_results, 3)
