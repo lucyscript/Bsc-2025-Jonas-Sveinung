@@ -395,7 +395,9 @@ async def handle_reaction(emoji, claim_text):
             conn.close()
 
 
-async def handle_image(phone_number: str, message_id: str, image_id: str, caption: str = ""):
+async def handle_image(
+    phone_number: str, message_id: str, image_id: str, caption: str = ""
+):
     """Process image messages by extracting text using OCR and fact-checking."""
     try:
         image_url = await get_image_url(image_id)
@@ -471,7 +473,7 @@ async def handle_claim_suggestions(
     logger.info(f"I'M IN CLAIM SUGGESTIONS: {cleaned_claim_suggestions}")
 
     top_suggestions = []
-    for result in cleaned_claim_suggestions[:3]:
+    for result in cleaned_claim_suggestions:
         top_suggestions.append(result["claim"].replace('"', "'"))
 
     if claim:
@@ -488,8 +490,6 @@ async def handle_claim_suggestions(
             claim=claim,
             context=context,
         )
-
-    suggestions = "\n".join(top_suggestions)
 
     tailored_response = await generate(suggestion_prompt)
 

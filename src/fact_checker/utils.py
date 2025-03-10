@@ -396,6 +396,9 @@ def clean_claim_search_results(json_data: dict | None) -> list:
         claim = result.get("claim")
         label = result.get("label")
 
+        if len(cleaned_results) == 3:
+            break
+
         if (
             not claim
             or not label
