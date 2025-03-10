@@ -170,12 +170,14 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                     elif message_type == "image":
                         image_data = message.get("image", {})
                         image_id = image_data.get("id")
+                        caption = image_data.get("caption")
                         if image_id:
                             background_tasks.add_task(
                                 handle_image,
                                 phone_number,
                                 message_id,
                                 image_id,
+                                caption,
                             )
                         else:
                             error_msg = "No image ID found. Please try again."
@@ -393,15 +395,19 @@ async def handle_reaction(emoji, claim_text):
             conn.close()
 
 
-async def handle_image(phone_number: str, message_id: str, image_id: str):
+async def handle_image(phone_number: str, message_id: str, image_id: str, caption: str = ""):
     """Process image messages by extracting text using OCR and fact-checking."""
     try:
         image_url = await get_image_url(image_id)
         image_bytes = await download_image(image_url)
+        full_text = "Image text:"
 
-        extracted_text = extract_text_from_image(image_bytes)
+        full_text += extract_text_from_image(image_bytes)
 
-        if not extracted_text.strip():
+        if caption:
+            full_text += f"\nCaption: {caption}" if caption else ""
+
+        if not full_text.strip():
             error_msg = """I can only understand text in images...\n
             No text was found in this one."""
             sent_message = await send_whatsapp_message(
@@ -417,14 +423,14 @@ async def handle_image(phone_number: str, message_id: str, image_id: str):
             return
 
         message_context[phone_number].append(
-            f"User uploaded an image containing this text: {extracted_text}\n"
+            f"User uploaded an image containing this text: {full_text}\n"
         )
         context = "\n".join(message_context[phone_number][:-1])
 
         await handle_message_with_intent(
             phone_number,
             message_id,
-            extracted_text,
+            full_text,
             context,
         )
 
@@ -485,7 +491,7 @@ async def handle_claim_suggestions(
 
     suggestions = "\n".join(top_suggestions)
 
-    tailored_response = await generate(suggestion_prompt, suggestions)
+    tailored_response = await generate(suggestion_prompt)
 
     sent_message = await send_whatsapp_message(
         phone_number,
