@@ -105,4 +105,4 @@ async def handle_general_intent(message_text: str, context: str) -> str:
         message_text=message_text,
         context=context,
     )
-    return await generate(general_prompt)
+    return await generate(general_prompt, message_text)

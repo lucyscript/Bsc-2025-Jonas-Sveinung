@@ -491,7 +491,7 @@ async def handle_claim_suggestions(
             context=context,
         )
 
-    tailored_response = await generate(suggestion_prompt)
+    tailored_response = await generate(suggestion_prompt, message_text)
 
     sent_message = await send_whatsapp_message(
         phone_number,
