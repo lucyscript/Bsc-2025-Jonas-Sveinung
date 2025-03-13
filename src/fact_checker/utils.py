@@ -193,7 +193,9 @@ def clean_facts(json_data: dict | None) -> list:
             evidence_list = json_data.get("evidence", [])
             claim_text = json_data.get("claim", "")
             if not evidence_list:
-                return [{"error": f"No evidence found for claim: {claim_text}"}]
+                cleaned_results.append({"error": f"No evidence found for claim: '{claim_text}'. Tell the user you are uncertain about the claim, without elaborating further."})
+                logger.info(cleaned_results)
+                return cleaned_results
             summary = " ".join(
                 str(item) for item in json_data.get("summary", [])
             ).replace('"', "'")
@@ -305,6 +307,8 @@ def clean_facts(json_data: dict | None) -> list:
                         "refuting_evidence": refuting_evidence,
                     }
                 )
+
+        logger.info(cleaned_results)
 
         return cleaned_results
 
