@@ -91,7 +91,7 @@ async def handle_fact_check_intent(
     else:
         fact_check_prompt = get_prompt(
             "fact_check",
-            message_text=message_text,
+            message_text=claims[0],
             context=context,
         )
 
