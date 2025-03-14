@@ -1,9 +1,7 @@
 """Fact-checking utility for verifying claims using Factiverse API."""
 
-import asyncio
 import logging
 import os
-import random
 
 import httpx
 from dotenv import load_dotenv
@@ -193,7 +191,6 @@ def clean_facts(json_data: dict | None) -> list:
             evidence_list = json_data.get("evidence", [])
             claim_text = json_data.get("claim", "")
             if not evidence_list:
-                cleaned_results.append({"error": f"No evidence found for claim: '{claim_text}'. Tell the user you are uncertain about the claim, without elaborating further."})
                 logger.info(cleaned_results)
                 return cleaned_results
             summary = " ".join(
@@ -315,111 +312,3 @@ def clean_facts(json_data: dict | None) -> list:
     except Exception as e:
         logger.error(f"Error cleaning facts: {str(e)}")
         return []
-
-
-async def claim_search():
-    """Search for fact checking resources related to a given claim.
-
-    Args:
-        text: Text or claim to search for fact checks about
-
-    Returns:
-        Dictionary containing claim search results with format:
-
-    Raises:
-        HTTPException: When API call fails or service is unavailable
-    """
-    payload = {
-        "logging": False,
-        "lang": "en",
-        "query": "",
-        "reverseSortPubDate": True,
-        "size": 100,
-    }
-
-    headers = {
-        "Authorization": f"Bearer {FACTIVERSE_API_TOKEN}",
-        "Content-Type": "application/json",
-    }
-
-    max_retries = 3
-    retry_delay = 1
-
-    for attempt in range(max_retries + 1):
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-                response = await client.post(
-                    f"{API_BASE_URL}/claim_search",
-                    json=payload,
-                    headers=headers,
-                )
-                response.raise_for_status()
-                return response.json()
-
-        except httpx.HTTPStatusError as e:
-            if attempt < max_retries and e.response.status_code >= 500:
-                print(
-                    f"Retry attempt {attempt + 1}/{max_retries} for 5xx error"
-                )
-                await asyncio.sleep(retry_delay * (2**attempt))
-                continue
-            raise HTTPException(
-                status_code=e.response.status_code,
-                detail=f"Claim search service error: {e.response.text}",
-            )
-        except httpx.RequestError as e:
-            if attempt < max_retries:
-                print(
-                    f"Retry attempt {attempt + 1}/{max_retries} for "
-                    "connection error"
-                )
-                await asyncio.sleep(retry_delay * (2**attempt))
-                continue
-            raise HTTPException(
-                status_code=503,
-                detail=f"Service temporarily unavailable: {str(e)}",
-            )
-
-    return None
-
-
-def clean_claim_search_results(json_data: dict | None) -> list:
-    """Extract and structure relevant claim search results.
-
-    Args:
-        json_data: The raw JSON response from the claim search API
-
-    Returns:
-        A list of cleaned and structured fact check result entries
-    """
-    candidate_results: list[dict] = []
-
-    if json_data is None or "searchResults" not in json_data:
-        return candidate_results
-
-    for result in json_data.get("searchResults", []):
-        claim = result.get("claim")
-        label = result.get("label")
-
-        if (
-            not claim
-            or not label
-            or any(
-                word in claim.lower() for word in ["photo", "video", "image"]
-            )
-            or label == "unknown"
-            or not result.get("domain")
-        ):
-            continue
-
-        fact_check_entry = {
-            "claim": result.get("claim", ""),
-            "domain": result.get("domain", ""),
-        }
-
-        candidate_results.append(fact_check_entry)
-
-    if len(candidate_results) <= 3:
-        return candidate_results
-    else:
-        return random.sample(candidate_results, 3)
