@@ -384,9 +384,14 @@ async def handle_message_reply(
             prompt, evidence_data, has_evidence = fact_check_result
 
             if not has_evidence:
-                response = await handle_claim_suggestions(
-                    message_id, phone_number, message_text, context, claim
-                )
+                if is_reply:
+                    response = await handle_claim_suggestions(
+                        message_id, phone_number, message_text, context, claim
+                    )
+                else:
+                    response = await handle_claim_suggestions(
+                        message_id, phone_number, claim, context
+                    )
                 return
             else:
                 response = await generate(prompt, evidence_data)
@@ -516,7 +521,6 @@ async def handle_claim_suggestions(
         suggestion_prompt = get_prompt(
             "claim_suggestion",
             message_text=message_text,
-            claim=claim,
             context=context,
         )
 
