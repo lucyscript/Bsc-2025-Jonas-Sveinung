@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import time
 import unicodedata
 from typing import Dict, Optional, Tuple
@@ -12,8 +13,6 @@ from fastapi.responses import PlainTextResponse
 from src.config.prompts import get_prompt
 from src.db.utils import connect, insert_feedback
 from src.fact_checker.utils import (
-    claim_search,
-    clean_claim_search_results,
     detect_claims,
     generate,
 )
@@ -27,7 +26,7 @@ from src.intent.utils import (
     handle_fact_check_intent,
     handle_general_intent,
 )
-from src.whatsapp.utils import send_whatsapp_message
+from src.whatsapp.utils import send_interactive_buttons, send_whatsapp_message
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 
@@ -37,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 message_context: Dict[str, list[str]] = {}
 message_id_to_bot_message: Dict[str, str] = {}
+button_id_to_claim: Dict[str, str] = {}  # Store button ID to claim mapping
 
 
 @router.get("/webhook")
@@ -132,6 +132,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                     message_text,
                                     context,
                                     selected_claim,
+                                    True,
                                 )
                                 continue
 
@@ -146,6 +147,40 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             message_text,
                             context,
                         )
+
+                    elif message_type == "interactive":
+                        interactive_data = message.get("interactive", {})
+                        interactive_type = interactive_data.get("type")
+
+                        if interactive_type == "button_reply":
+                            button_reply = interactive_data.get(
+                                "button_reply", {}
+                            )
+                            button_id = button_reply.get("id")
+                            button_title = button_reply.get("title")
+
+                            if button_id in button_id_to_claim:
+                                claim = button_id_to_claim[button_id]
+                                context = "\n".join(
+                                    message_context[phone_number]
+                                )
+
+                                logger.info(
+                                    f"User selected claim via button: {claim}"
+                                )
+                                message_context[phone_number].append(
+                                    f"User selected claim: {claim}\n"
+                                )
+
+                                background_tasks.add_task(
+                                    handle_message_reply,
+                                    phone_number,
+                                    message_id,
+                                    button_title,
+                                    context,
+                                    claim,
+                                    False,
+                                )
 
                     elif message_type == "reaction":
                         reaction = message.get("reaction")
@@ -233,9 +268,7 @@ async def handle_message_with_intent(
 
         intent_type = intent_data.get("intent_type", "fact_check")
         short_message = intent_data.get("short_message", False)
-        split_claims = intent_data.get(
-            "split_claims"
-        )  # New field for compound statements
+        split_claims = intent_data.get("split_claims")
 
         if intent_type == "fact_check" and short_message is True:
             try:
@@ -333,16 +366,21 @@ async def handle_message_reply(
     message_text: str,
     context: str,
     claim: str,
+    is_reply: bool = False,
 ):
     """Process messages using intent detection."""
     try:
         try:
-            logger.log(logging.INFO, f"Handling message reply: {message_text}")
-            fact_check_result: Tuple[str, str, bool] = (
-                await handle_fact_check_intent(
+            fact_check_result: Tuple[str, str, bool]
+            if is_reply:
+                fact_check_result = await handle_fact_check_intent(
                     message_text, context, [claim], is_reply=True
                 )
-            )
+            else:
+                fact_check_result = await handle_fact_check_intent(
+                    message_text, context, [claim]
+                )
+
             prompt, evidence_data, has_evidence = fact_check_result
 
             if not has_evidence:
@@ -467,15 +505,6 @@ async def handle_claim_suggestions(
         context: The conversation context
         claim: The claim to suggest evidence for
     """
-    claim_suggestions = await claim_search()
-    cleaned_claim_suggestions = clean_claim_search_results(claim_suggestions)
-
-    logger.info(f"I'M IN CLAIM SUGGESTIONS: {cleaned_claim_suggestions}")
-
-    top_suggestions = []
-    for result in cleaned_claim_suggestions:
-        top_suggestions.append(result["claim"].replace('"', "'"))
-
     if claim:
         suggestion_prompt = get_prompt(
             "claim_suggestion_reply",
@@ -493,30 +522,49 @@ async def handle_claim_suggestions(
 
     tailored_response = await generate(suggestion_prompt, message_text)
 
-    sent_message = await send_whatsapp_message(
-        phone_number,
-        tailored_response,
-        message_id,
-    )
-    message_context[phone_number].append(f"Bot: {tailored_response}\n")
+    claims = []
+    for line in tailored_response.split("\n"):
+        if line.startswith("Claim "):
+            # Extract the claim text after the "Claim X: " prefix
+            claim_match = re.search(r"Claim \d+: (.*)", line)
+            if claim_match:
+                claims.append(claim_match.group(1).strip())
 
-    if sent_message and "messages" in sent_message:
-        bot_message_id = sent_message["messages"][0]["id"]
-        message_id_to_bot_message[bot_message_id] = tailored_response
+    # For debugging
+    logger.info(f"Extracted claims: {claims}")
 
-    for idx, suggestion in enumerate(top_suggestions, 1):
-        number_emoji = ["1️⃣", "2️⃣", "3️⃣"][idx - 1]
-        sent_message = await send_whatsapp_message(
+    buttons = []
+    for idx, suggestion in enumerate(claims, 1):
+        button_id = f"claim_{idx}_{message_id[-8:]}"
+        button_title = f"Claim {idx}"
+        buttons.append({"id": button_id, "title": button_title})
+
+        button_id_to_claim[button_id] = suggestion
+
+    print(buttons)
+
+    if buttons:
+        sent_message = await send_interactive_buttons(
             phone_number,
-            f"{number_emoji} {suggestion}",
+            tailored_response,
+            buttons,
             message_id,
         )
-        message_context[phone_number].append(
-            f"Bot: {number_emoji} {suggestion}\n"
-        )
+
+        message_context[phone_number].append(f"Bot: {tailored_response}\n")
 
         if sent_message and "messages" in sent_message:
             bot_message_id = sent_message["messages"][0]["id"]
-            message_id_to_bot_message[bot_message_id] = (
-                f"{number_emoji} {suggestion}"
-            )
+            message_id_to_bot_message[bot_message_id] = tailored_response
+    else:
+        # Fallback to regular message if no buttons
+        sent_message = await send_whatsapp_message(
+            phone_number,
+            tailored_response,
+            message_id,
+        )
+        message_context[phone_number].append(f"Bot: {tailored_response}\n")
+
+        if sent_message and "messages" in sent_message:
+            bot_message_id = sent_message["messages"][0]["id"]
+            message_id_to_bot_message[bot_message_id] = tailored_response
