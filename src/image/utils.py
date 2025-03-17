@@ -4,7 +4,7 @@ import logging
 import os
 from io import BytesIO
 
-import httpx
+import aiohttp
 import pytesseract
 from PIL import Image
 
@@ -17,10 +17,14 @@ async def get_image_url(image_id: str) -> str:
     headers = {
         "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}",
     }
-    async with httpx.AsyncClient() as client:
-        response = await client.get(whatsapp_api_url, headers=headers)
-        response.raise_for_status()
-        return response.json().get("url")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(whatsapp_api_url, headers=headers) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                logger.error(f"WhatsApp API error: {error_text}")
+                raise Exception(f"Failed to get image URL: {response.status}")
+            data = await response.json()
+            return data.get("url")
 
 
 async def download_image(image_url: str) -> bytes:
@@ -28,10 +32,13 @@ async def download_image(image_url: str) -> bytes:
     headers = {
         "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}",
     }
-    async with httpx.AsyncClient() as client:
-        response = await client.get(image_url, headers=headers)
-        response.raise_for_status()
-        return response.content
+    async with aiohttp.ClientSession() as session:
+        async with session.get(image_url, headers=headers) as response:
+            if response.status != 200:
+                error_text = await response.text()
+                logger.error(f"WhatsApp API error: {error_text}")
+                raise Exception(f"Failed to download image: {response.status}")
+            return await response.read()
 
 
 def extract_text_from_image(image_bytes: bytes) -> str:

@@ -1,9 +1,11 @@
 """Fact-checking utility for verifying claims using Factiverse API."""
 
+import asyncio
 import logging
 import os
+from typing import Any, Dict, List
 
-import httpx
+import aiohttp
 from dotenv import load_dotenv
 from fastapi import HTTPException
 
@@ -30,14 +32,18 @@ async def generate(prompt: str, text: str = "") -> str:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.post(
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
                 f"{API_BASE_URL}/generate",
                 json=payload,
                 headers=headers,
-            )
-            response.raise_for_status()
-            return response.json().get("full_output", "").replace("**", "*")
+            ) as response:
+                if response.status != 200:
+                    logger.error(f"Generate API error: {await response.text()}")
+                    return ""
+                data = await response.json()
+                return data.get("full_output", "").replace("**", "*")
 
     except Exception as e:
         logger.error(f"Generate error: {str(e)}")
@@ -67,17 +73,63 @@ async def stance_detection(claim: str):
     }
 
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.post(
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
                 f"{API_BASE_URL}/stance_detection",
                 json=payload,
                 headers=headers,
-            )
-            response.raise_for_status()
-            return response.json()
-    except Exception as e:
+            ) as response:
+                if response.status >= 400:
+                    error_text = await response.text()
+                    logger.error(f"Stance detection API error: {error_text}")
+                    raise HTTPException(
+                        status_code=response.status,
+                        detail=f"Stance detection service error: {error_text}",
+                    )
+                return await response.json()
+    except aiohttp.ClientError as e:
         logger.error(f"Unexpected error in stance detection: {str(e)}")
         raise
+
+
+async def batch_stance_detection(claims: List[str]) -> List[Dict[str, Any]]:
+    """Process multiple claims concurrently using stance detection.
+
+    Args:
+        claims: List of claims to fact check
+
+    Returns:
+        List of stance detection results, one for each claim
+    """
+    if not claims:
+        return []
+
+    tasks = [stance_detection(claim) for claim in claims]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    processed_results: List[Dict[str, Any]] = []
+    for i, result in enumerate(results):
+        if isinstance(result, Exception):
+            logger.error(
+                f"Error in batch processing claim '{claims[i]}': {str(result)}"
+            )
+            processed_results.append({"error": str(result), "claim": claims[i]})
+        elif isinstance(result, dict):
+            processed_results.append(result)
+        else:
+            logger.error(
+                "Unexpected result type for claim "
+                f"'{claims[i]}': {type(result)}"
+            )
+            processed_results.append(
+                {
+                    "error": f"Unexpected result type: {type(result)}",
+                    "claim": claims[i],
+                }
+            )
+
+    return processed_results
 
 
 async def fact_check(url: str):
@@ -106,19 +158,26 @@ async def fact_check(url: str):
     }
 
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.post(
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
                 f"{API_BASE_URL}/fact_check",
                 json=payload,
                 headers=headers,
-            )
-            response.raise_for_status()
-            return response.json()
+            ) as response:
+                if response.status >= 400:
+                    error_text = await response.text()
+                    logger.error(f"Fact check API error: {error_text}")
+                    raise HTTPException(
+                        status_code=response.status,
+                        detail=f"Fact check service error: {error_text}",
+                    )
+                return await response.json()
 
-    except httpx.HTTPStatusError as e:
+    except aiohttp.ClientError as e:
         raise HTTPException(
-            status_code=e.response.status_code,
-            detail=f"Fact check service error: {e.response.text}",
+            status_code=500,
+            detail=f"Fact check service error: {str(e)}",
         )
 
 
@@ -147,26 +206,30 @@ async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.post(
+        timeout = aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
                 f"{API_BASE_URL}/claim_detection",
                 json=payload,
                 headers=headers,
-            )
-            response.raise_for_status()
+            ) as response:
+                if response.status >= 400:
+                    error_text = await response.text()
+                    logger.error(f"Claim detection API error: {error_text}")
+                    return []
 
-            claims_data = response.json()
-            claims = []
+                claims_data = await response.json()
+                claims = []
 
-            if "detectedClaims" in claims_data:
-                for claim in claims_data["detectedClaims"]:
-                    claim_text = str(claim.get("claim", "")).strip()
-                    if claim_text:
-                        claims.append(claim_text)
+                if "detectedClaims" in claims_data:
+                    for claim in claims_data["detectedClaims"]:
+                        claim_text = str(claim.get("claim", "")).strip()
+                        if claim_text:
+                            claims.append(claim_text)
 
-            return claims
+                return claims
 
-    except httpx.HTTPStatusError as e:
+    except aiohttp.ClientError as e:
         print(f"Claim detection API error: {str(e)}")
         return []
     except KeyError as e:

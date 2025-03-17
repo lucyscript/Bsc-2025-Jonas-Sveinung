@@ -1,5 +1,6 @@
 """Intent detection for WhatsApp fact-checking bot."""
 
+import asyncio
 import json
 import logging
 import re
@@ -58,7 +59,6 @@ async def handle_fact_check_intent(
 
     if url_match:
         url = url_match.group(0)
-
         fact_results = await fact_check(url)
         evidence = clean_facts(fact_results)
 
@@ -67,18 +67,31 @@ async def handle_fact_check_intent(
 
         final_evidence_text += f"{evidence}\n"
 
-    for claim in claims:
+    if claims:
         try:
-            logger.log(logging.INFO, f"Handling claim: {claim}")
-            fact_results = await stance_detection(claim)
-            evidence = clean_facts(fact_results)
+            claim_tasks = [stance_detection(claim) for claim in claims]
+            logger.info(
+                f"Created {len(claim_tasks)} tasks for claims processing"
+            )
+            fact_results_list = await asyncio.gather(
+                *claim_tasks, return_exceptions=True
+            )
 
-            if any("error" not in item for item in evidence):
-                has_evidence = True
+            for i, result in enumerate(fact_results_list):
+                if isinstance(result, Exception):
+                    logger.error(
+                        f"Error processing claim {claims[i]}: {str(result)}"
+                    )
+                    continue
 
-            final_evidence_text += f"{evidence}\n"
-        except Exception:
-            logger.log(logging.ERROR, "Error in for loop")
+                if not isinstance(result, BaseException):
+                    evidence = clean_facts(result)
+                    if any("error" not in item for item in evidence):
+                        has_evidence = True
+                    final_evidence_text += f"{evidence}\n"
+
+        except Exception as e:
+            logger.error(f"Error in concurrent claim processing: {str(e)}")
             raise
 
     if is_reply:
@@ -91,7 +104,7 @@ async def handle_fact_check_intent(
     else:
         fact_check_prompt = get_prompt(
             "fact_check",
-            message_text=claims[0],
+            message_text=message_text,
             context=context,
         )
 
