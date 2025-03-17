@@ -3,7 +3,7 @@
 import logging
 import os
 
-import httpx
+import aiohttp
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
@@ -37,17 +37,24 @@ async def send_whatsapp_message(phone_number: str, message: str, reply_to: str):
     }
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url, json=payload, headers=headers, timeout=10
-            )
-            response.raise_for_status()
-            return response.json()
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                url, json=payload, headers=headers
+            ) as response:
+                if response.status >= 400:
+                    error_text = await response.text()
+                    logger.error(f"WhatsApp API error: {error_text}")
+                    raise HTTPException(
+                        status_code=response.status,
+                        detail="Failed to send WhatsApp message",
+                    )
+                return await response.json()
 
-    except httpx.HTTPStatusError as e:
-        logger.error(f"WhatsApp API error: {e.response.text}")
+    except aiohttp.ClientError as e:
+        logger.error(f"WhatsApp API error: {str(e)}")
         raise HTTPException(
-            status_code=e.response.status_code,
+            status_code=500,
             detail="Failed to send WhatsApp message",
         )
 
@@ -77,9 +84,7 @@ async def send_interactive_buttons(
                 "type": "reply",
                 "reply": {
                     "id": button["id"],
-                    "title": button["title"][
-                        :20
-                    ],  # Max 20 characters for button title
+                    "title": button["title"],
                 },
             }
         )
@@ -93,28 +98,32 @@ async def send_interactive_buttons(
         "type": "interactive",
         "interactive": {
             "type": "button",
-            "body": {
-                "text": message[:1024]  # Max 1024 characters for body text
-            },
+            "body": {"text": message[:1024]},
             "action": {"buttons": formatted_buttons},
         },
     }
 
-    # Add context for reply if provided
     if reply_to:
         payload["context"] = {"message_id": reply_to}
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url, json=payload, headers=headers, timeout=10
-            )
-            response.raise_for_status()
-            return response.json()
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                url, json=payload, headers=headers
+            ) as response:
+                if response.status >= 400:
+                    error_text = await response.text()
+                    logger.error(f"WhatsApp API error: {error_text}")
+                    raise HTTPException(
+                        status_code=response.status,
+                        detail="Failed to send interactive WhatsApp message",
+                    )
+                return await response.json()
 
-    except httpx.HTTPStatusError as e:
-        logger.error(f"WhatsApp API error: {e.response.text}")
+    except aiohttp.ClientError as e:
+        logger.error(f"WhatsApp API error: {str(e)}")
         raise HTTPException(
-            status_code=e.response.status_code,
+            status_code=500,
             detail="Failed to send interactive WhatsApp message",
         )

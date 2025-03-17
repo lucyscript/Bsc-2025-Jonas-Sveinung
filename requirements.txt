@@ -1,6 +1,7 @@
 black
 ruff
 langdetect
+aiohttp
 pytesseract
 pytest
 pytest-cov

@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 message_context: Dict[str, list[str]] = {}
 message_id_to_bot_message: Dict[str, str] = {}
-button_id_to_claim: Dict[str, str] = {}  # Store button ID to claim mapping
+button_id_to_claim: Dict[str, str] = {}
 
 
 @router.get("/webhook")
@@ -264,13 +264,13 @@ async def handle_message_with_intent(
     """Process messages using intent detection."""
     try:
         intent_data = await detect_intent(message_text, context)
+        message_length = len(message_text.split())
         logger.info(f"Intent data: {intent_data}")
 
         intent_type = intent_data.get("intent_type", "fact_check")
-        short_message = intent_data.get("short_message", False)
         split_claims = intent_data.get("split_claims")
 
-        if intent_type == "fact_check" and short_message is True:
+        if intent_type == "fact_check" and message_length < 100:
             try:
                 claims = split_claims if split_claims else [message_text]
                 fact_check_result: Tuple[str, str, bool] = (
@@ -290,7 +290,7 @@ async def handle_message_with_intent(
             except Exception as e:
                 logger.warning(f"Failed to handle fact check intent: {e}")
                 response = "⚠️ Temporary service issue. Please try again!"
-        elif intent_type == "fact_check" and short_message is False:
+        elif intent_type == "fact_check" and message_length >= 100:
             claims = await detect_claims(message_text)
             print(f"claims: {claims}")
             if not claims:
@@ -300,7 +300,6 @@ async def handle_message_with_intent(
                 return
             else:
                 try:
-                    # Use a different variable name to avoid conflict
                     fact_check_result2: Tuple[str, str, bool] = (
                         await handle_fact_check_intent(
                             message_text, context, [message_text]
@@ -443,7 +442,9 @@ async def handle_image(
 ):
     """Process image messages by extracting text using OCR and fact-checking."""
     try:
-        image_url = await get_image_url(image_id)
+        image_url_task = get_image_url(image_id)
+        image_url = await image_url_task
+
         image_bytes = await download_image(image_url)
         full_text = "Image text:"
 
