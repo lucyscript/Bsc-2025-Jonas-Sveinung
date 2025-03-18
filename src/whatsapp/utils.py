@@ -60,7 +60,7 @@ async def send_whatsapp_message(phone_number: str, message: str, reply_to: str):
 
 
 async def send_interactive_buttons(
-    phone_number: str, message: str, buttons: list, reply_to: str = None
+    phone_number: str, message: str, buttons: list, reply_to: str = ""
 ):
     """Send interactive button message via WhatsApp Cloud API.
 
