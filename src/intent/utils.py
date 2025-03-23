@@ -36,7 +36,8 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
         intent_data = json.loads(intent_response)
         return intent_data
     except json.JSONDecodeError:
-        return {"intent_type": "fact_check", "short_message": True}
+        logger.info(f"Failed to decode intent response: {intent_response}")
+        return {"intent_type": "general"}
 
 
 async def handle_fact_check_intent(
