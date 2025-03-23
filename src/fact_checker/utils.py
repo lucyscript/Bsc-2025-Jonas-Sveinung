@@ -294,17 +294,6 @@ def clean_facts(json_data: dict | None) -> list:
                 else:
                     evidence_snippet = ""
 
-                if not summary and not fix:
-                    cleaned_results.append(
-                        {
-                            "error": "[NO_SUMMARY_AND_FIX_AVAILABLE] "
-                            "Please only present the verdict and URLs without "
-                            "generating explanations.\nDo not generate "
-                            "suggested fixes. Stick to factual information "
-                            "from the sources."
-                        }
-                    )
-
                 evidence_entry = {
                     "labelDescription": label,
                     "domain_name": evidence.get("domainName", ""),
@@ -320,17 +309,42 @@ def clean_facts(json_data: dict | None) -> list:
                 else:
                     refuting_evidence.append(evidence_entry)
 
-            cleaned_results.append(
-                {
-                    "claim": claim_text,
-                    "verdict": final_verdict,
-                    "confidence_percentage": confidence,
-                    "summary": summary,
-                    "fix": fix,
-                    "supporting_evidence": supporting_evidence,
-                    "refuting_evidence": refuting_evidence,
-                }
-            )
+            if not summary and not fix:
+                cleaned_results.append(
+                    {
+                        "strict_formatting": f"""
+                        IMPORTANT:
+                        DO NOT PROVIDE ANY ANALYSIS OR ELABORATION ON THE CLAIM.
+                        YOU MUST RESPOND IDENTICAL TO THE IDENTICAL PART,
+                        AND YOU MUST RESPOND NATURALLY TO THE NATURAL PART:
+
+                        --- IDENTICAL ---
+                        Claim: {claim_text}
+                        Verdict: {final_verdict} ({confidence}% confidence)
+                        --- IDENTICAL ---
+
+                        --- NATURAL ---
+                        URL AND EVIDENCE SNIPPET SUMMARY ONLY (MAX 3):
+                        - Supporting Evidence: {supporting_evidence} sources
+                        - Refuting Evidence: {refuting_evidence} sources
+
+                        Encouraging ending
+                        --- NATURAL ---
+                        """,
+                    }
+                )
+            else:
+                cleaned_results.append(
+                    {
+                        "claim": claim_text,
+                        "verdict": final_verdict,
+                        "confidence_percentage": confidence,
+                        "summary": summary,
+                        "fix": fix,
+                        "supporting_evidence": supporting_evidence,
+                        "refuting_evidence": refuting_evidence,
+                    }
+                )
         else:
             for text_item in json_data.get("text", []):
                 evidence_list = text_item.get("evidence", [])
