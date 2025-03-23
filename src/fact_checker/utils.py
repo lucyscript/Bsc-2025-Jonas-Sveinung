@@ -283,6 +283,16 @@ def clean_facts(json_data: dict | None) -> list:
                 label = evidence.get("labelDescription", "")
                 if label not in ["SUPPORTS", "REFUTES"]:
                     continue
+                
+                sim_score = evidence.get("simScore", 0)
+                if sim_score > 0.5:
+                    evidence_snippet = (
+                        evidence.get("evidenceSnippet", "")[:1000] + "..."
+                        if len(evidence.get("evidenceSnippet", "")) > 1000
+                        else evidence.get("evidenceSnippet", "")
+                    )
+                else:
+                    evidence_snippet = ""
 
                 evidence_entry = {
                     "labelDescription": label,
@@ -291,6 +301,7 @@ def clean_facts(json_data: dict | None) -> list:
                         "domain_reliability", {}
                     ).get("Reliability", "Unknown"),
                     "url": evidence.get("url", ""),
+                    "evidenceSnippet": evidence_snippet,
                 }
 
                 if label == "SUPPORTS":
@@ -349,6 +360,11 @@ def clean_facts(json_data: dict | None) -> list:
                             "domain_reliability", {}
                         ).get("Reliability", "Unknown"),
                         "url": evidence.get("url", ""),
+                        "evidenceSnippet": (
+                            evidence.get("evidenceSnippet", "")[:1000] + "..."
+                            if len(evidence.get("evidenceSnippet", "")) > 1000
+                            else evidence.get("evidenceSnippet", "")
+                        ),
                     }
 
                     if label == "SUPPORTS":
