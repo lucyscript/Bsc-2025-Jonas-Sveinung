@@ -181,7 +181,7 @@ async def fact_check(url: str):
         )
 
 
-async def detect_claims(text: str, threshold: float = 0.9) -> list[str]:
+async def detect_claims(text: str, threshold: float = 0.7) -> list[str]:
     """Detect individual claims in text using Factiverse API.
 
     Args:
@@ -283,7 +283,7 @@ def clean_facts(json_data: dict | None) -> list:
                 label = evidence.get("labelDescription", "")
                 if label not in ["SUPPORTS", "REFUTES"]:
                     continue
-                
+
                 sim_score = evidence.get("simScore", 0)
                 if sim_score > 0.5:
                     evidence_snippet = (

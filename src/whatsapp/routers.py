@@ -1,5 +1,6 @@
 """Enhanced WhatsApp Cloud API integration with Factiverse fact-checking."""
 
+import asyncio
 import logging
 import os
 import re
@@ -273,9 +274,15 @@ async def handle_message_with_intent(
         if intent_type == "fact_check" and message_length < 100:
             try:
                 claims = split_claims if split_claims else [message_text]
+                relevant_claims = await asyncio.gather(
+                    *[detect_claims(claim) for claim in claims]
+                )
+                claims_list = [
+                    claim for sublist in relevant_claims for claim in sublist
+                ]
                 fact_check_result: Tuple[str, str, bool] = (
                     await handle_fact_check_intent(
-                        message_text, context, claims
+                        message_text, context, claims_list
                     )
                 )
                 prompt, evidence_data, has_evidence = fact_check_result
@@ -302,7 +309,7 @@ async def handle_message_with_intent(
                 try:
                     fact_check_result2: Tuple[str, str, bool] = (
                         await handle_fact_check_intent(
-                            message_text, context, [message_text]
+                            message_text, context, claims
                         )
                     )
                     prompt, evidence_data, has_evidence = fact_check_result2
