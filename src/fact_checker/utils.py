@@ -294,6 +294,17 @@ def clean_facts(json_data: dict | None) -> list:
                 else:
                     evidence_snippet = ""
 
+                if not summary and not fix:
+                    cleaned_results.append(
+                        {
+                            "error": "[NO_SUMMARY_AND_FIX_AVAILABLE] "
+                            "Please only present the verdict and URLs without "
+                            "generating explanations.\nDo not generate "
+                            "suggested fixes. Stick to factual information "
+                            "from the sources."
+                        }
+                    )
+
                 evidence_entry = {
                     "labelDescription": label,
                     "domain_name": evidence.get("domainName", ""),
