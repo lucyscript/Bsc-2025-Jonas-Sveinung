@@ -280,20 +280,19 @@ async def handle_message_with_intent(
                 claims_list = [
                     claim for sublist in relevant_claims for claim in sublist
                 ]
-                fact_check_result: Tuple[str, str, bool] = (
+                if not claims_list:
+                    await handle_claim_suggestions(
+                        message_id, phone_number, message_text, context
+                    )
+                    return
+                fact_check_result: Tuple[str, str] = (
                     await handle_fact_check_intent(
                         message_text, context, claims_list
                     )
                 )
-                prompt, evidence_data, has_evidence = fact_check_result
+                prompt, evidence_data = fact_check_result
 
-                if not has_evidence:
-                    response = await handle_claim_suggestions(
-                        message_id, phone_number, message_text, context
-                    )
-                    return
-                else:
-                    response = await generate(prompt, evidence_data)
+                response = await generate(prompt, evidence_data)
             except Exception as e:
                 logger.warning(f"Failed to handle fact check intent: {e}")
                 response = "⚠️ Temporary service issue. Please try again!"
@@ -307,19 +306,13 @@ async def handle_message_with_intent(
                 return
             else:
                 try:
-                    fact_check_result2: Tuple[str, str, bool] = (
+                    fact_check_result2: Tuple[str, str] = (
                         await handle_fact_check_intent(
                             message_text, context, claims
                         )
                     )
-                    prompt, evidence_data, has_evidence = fact_check_result2
-                    if not has_evidence:
-                        response = await handle_claim_suggestions(
-                            message_id, phone_number, message_text, context
-                        )
-                        return
-                    else:
-                        response = await generate(prompt, evidence_data)
+                    prompt, evidence_data = fact_check_result2
+                    response = await generate(prompt, evidence_data)
                 except Exception as e:
                     logger.warning(
                         f"Failed to handle fact check intent with claims: {e}"
@@ -377,7 +370,7 @@ async def handle_message_reply(
     """Process messages using intent detection."""
     try:
         try:
-            fact_check_result: Tuple[str, str, bool]
+            fact_check_result: Tuple[str, str]
             if is_reply:
                 fact_check_result = await handle_fact_check_intent(
                     message_text, context, [claim], is_reply=True
@@ -387,20 +380,8 @@ async def handle_message_reply(
                     message_text, context, [claim]
                 )
 
-            prompt, evidence_data, has_evidence = fact_check_result
-
-            if not has_evidence:
-                if is_reply:
-                    response = await handle_claim_suggestions(
-                        message_id, phone_number, message_text, context, claim
-                    )
-                else:
-                    response = await handle_claim_suggestions(
-                        message_id, phone_number, claim, context
-                    )
-                return
-            else:
-                response = await generate(prompt, evidence_data)
+            prompt, evidence_data = fact_check_result
+            response = await generate(prompt, evidence_data)
         except Exception as e:
             logger.warning(f"Failed to handle fact check intent: {e}")
             response = "Sorry, fact-checking failed. Please try again later."

@@ -41,7 +41,7 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
 
 async def handle_fact_check_intent(
     message_text: str, context: str, claims: list = [], is_reply: bool = False
-) -> Tuple[str, str, bool]:
+) -> Tuple[str, str]:
     """Generate response for fact check intent.
 
     Args:
@@ -51,19 +51,15 @@ async def handle_fact_check_intent(
         is_reply: Whether this is a reply to a previously suggested claim
 
     Returns:
-        A tuple containing (prompt, evidence_text, has_evidence)
+        A tuple containing (prompt, evidence_text)
     """
     url_match = re.search(r"https?://\S+", message_text)
     final_evidence_text = ""
-    has_evidence = False
 
     if url_match:
         url = url_match.group(0)
         fact_results = await fact_check(url)
         evidence = clean_facts(fact_results)
-
-        if any("error" not in item for item in evidence):
-            has_evidence = True
 
         final_evidence_text += f"{evidence}\n"
 
@@ -86,8 +82,6 @@ async def handle_fact_check_intent(
 
                 if not isinstance(result, BaseException):
                     evidence = clean_facts(result)
-                    if any("error" not in item for item in evidence):
-                        has_evidence = True
                     final_evidence_text += f"{evidence}\n"
 
         except Exception as e:
@@ -108,7 +102,7 @@ async def handle_fact_check_intent(
             context=context,
         )
 
-    return fact_check_prompt, final_evidence_text, has_evidence
+    return fact_check_prompt, final_evidence_text
 
 
 async def handle_general_intent(message_text: str, context: str) -> str:
