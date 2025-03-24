@@ -5,7 +5,4 @@
     "editor.formatOnType": true
   },
   "editor.formatOnPaste": true,
-  "python.linting.enabled": true,
-  "python.linting.lintOnSave": true,
-  "python.linting.ruffEnabled": true
 }

@@ -60,7 +60,7 @@ async def send_whatsapp_message(phone_number: str, message: str, reply_to: str):
 
 
 async def send_interactive_buttons(
-    phone_number: str, message: str, buttons: list, reply_to: str = ""
+    phone_number: str, message: str, buttons: list, reply_to: str
 ):
     """Send interactive button message via WhatsApp Cloud API.
 
@@ -89,22 +89,18 @@ async def send_interactive_buttons(
             }
         )
 
-    print(f"Formatted buttons: {formatted_buttons}")
-
     payload = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
         "to": phone_number,
         "type": "interactive",
+        "context": {"message_id": reply_to},
         "interactive": {
             "type": "button",
-            "body": {"text": message[:1024]},
+            "body": {"text": message},
             "action": {"buttons": formatted_buttons},
         },
     }
-
-    if reply_to:
-        payload["context"] = {"message_id": reply_to}
 
     try:
         timeout = aiohttp.ClientTimeout(total=10)
