@@ -33,7 +33,8 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
 
     intent_response = await generate(intent_prompt, message_text)
     try:
-        intent_data = json.loads(intent_response)
+        cleaned_response = intent_response.replace("'", '"')
+        intent_data = json.loads(cleaned_response)
         return intent_data
     except json.JSONDecodeError:
         logger.info(f"Failed to decode intent response: {intent_response}")
