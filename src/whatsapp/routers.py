@@ -5,7 +5,7 @@ import os
 import re
 import time
 import unicodedata
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -112,7 +112,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         if context_info:
                             replied_to_id = context_info.get("id")
                             if replied_to_id in message_id_to_bot_message:
-                                selected_claim = message_id_to_bot_message[
+                                replied_to = message_id_to_bot_message[
                                     replied_to_id
                                 ].replace('"', "'")
 
@@ -120,19 +120,17 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                     message_context[phone_number]
                                 )
 
-                                logger.info(
-                                    f"User replied to: {selected_claim} "
-                                    f"with {message_text}"
+                                context += (
+                                    "\n\nUser is currently replying to:"
+                                    f" {replied_to}\n"
                                 )
 
                                 background_tasks.add_task(
-                                    handle_message_reply,
+                                    handle_message_with_intent,
                                     phone_number,
                                     message_id,
                                     message_text,
                                     context,
-                                    selected_claim,
-                                    True,
                                 )
                                 continue
 
@@ -165,21 +163,15 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                     message_context[phone_number]
                                 )
 
-                                logger.info(
-                                    f"User selected claim via button: {claim}"
-                                )
                                 message_context[phone_number].append(
                                     f"User selected claim: {claim}\n"
                                 )
 
                                 background_tasks.add_task(
-                                    handle_message_reply,
-                                    phone_number,
-                                    message_id,
+                                    handle_fact_check_intent,
                                     button_title,
                                     context,
-                                    claim,
-                                    False,
+                                    [claim],
                                 )
 
                     elif message_type == "reaction":
@@ -195,7 +187,6 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             original_text = message_id_to_bot_message.get(
                                 id_reacted_to, ""
                             )
-                            print(f"original_text: {original_text}")
                             background_tasks.add_task(
                                 handle_reaction,
                                 emoji,
@@ -259,7 +250,10 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
 
 async def handle_message_with_intent(
-    phone_number: str, message_id: str, message_text: str, context: str
+    phone_number: str,
+    message_id: str,
+    message_text: str,
+    context: str,
 ):
     """Process messages using intent detection."""
     try:
@@ -303,7 +297,6 @@ async def handle_message_with_intent(
                 response = "⚠️ Temporary service issue. Please try again!"
         elif intent_type == "fact_check" and message_length >= 100:
             claims = await detect_claims(message_text)
-            print(f"claims: {claims}")
             if not claims:
                 await handle_claim_suggestions(
                     message_id, phone_number, message_text, context
@@ -338,58 +331,6 @@ async def handle_message_with_intent(
             except Exception as e:
                 logger.warning(f"Failed to handle claim suggestions: {e}")
                 response = "⚠️ Temporary service issue. Please try again!"
-
-        sent_message = await send_whatsapp_message(
-            phone_number=phone_number,
-            message=response,
-            reply_to=message_id,
-        )
-
-        message_context[phone_number].append(f"Bot: {response}\n")
-
-        if sent_message and "messages" in sent_message:
-            bot_message_id = sent_message["messages"][0]["id"]
-            message_id_to_bot_message[bot_message_id] = response
-
-    except Exception:
-        logger.error("Intent processing failed")
-        error_msg = "⚠️ Temporary service issue. Please try again!"
-        sent_message = await send_whatsapp_message(
-            phone_number, error_msg, message_id
-        )
-        message_context[phone_number].append(f"Bot: {error_msg}\n")
-
-        if sent_message and "messages" in sent_message:
-            bot_message_id = sent_message["messages"][0]["id"]
-            message_id_to_bot_message[bot_message_id] = error_msg
-
-
-async def handle_message_reply(
-    phone_number: str,
-    message_id: str,
-    message_text: str,
-    context: str,
-    claim: str,
-    is_reply: bool = False,
-):
-    """Process messages using intent detection."""
-    try:
-        try:
-            fact_check_result: Tuple[str, str]
-            if is_reply:
-                fact_check_result = await handle_fact_check_intent(
-                    message_text, context, [claim], is_reply=True
-                )
-            else:
-                fact_check_result = await handle_fact_check_intent(
-                    message_text, context, [claim]
-                )
-
-            prompt, evidence_data = fact_check_result
-            response = await generate(prompt, evidence_data)
-        except Exception as e:
-            logger.warning(f"Failed to handle fact check intent: {e}")
-            response = "Sorry, fact-checking failed. Please try again later."
 
         sent_message = await send_whatsapp_message(
             phone_number=phone_number,
@@ -493,7 +434,6 @@ async def handle_claim_suggestions(
     phone_number: str,
     message_text: str,
     context: str,
-    claim: Optional[str] = None,
 ):
     """Handle claim suggestions when no direct claims are detected.
 
@@ -504,32 +444,20 @@ async def handle_claim_suggestions(
         context: The conversation context
         claim: The claim to suggest evidence for
     """
-    if claim:
-        suggestion_prompt = get_prompt(
-            "claim_suggestion_reply",
-            message_text=message_text,
-            claim=claim,
-            context=context,
-        )
-    else:
-        suggestion_prompt = get_prompt(
-            "claim_suggestion",
-            message_text=message_text,
-            context=context,
-        )
+    suggestion_prompt = get_prompt(
+        "claim_suggestion",
+        message_text=message_text,
+        context=context,
+    )
 
     tailored_response = await generate(suggestion_prompt, message_text)
 
     claims = []
     for line in tailored_response.split("\n"):
         if line.startswith("Claim "):
-            # Extract the claim text after the "Claim X: " prefix
             claim_match = re.search(r"Claim \d+: (.*)", line)
             if claim_match:
                 claims.append(claim_match.group(1).strip())
-
-    # For debugging
-    logger.info(f"Extracted claims: {claims}")
 
     buttons = []
     for idx, suggestion in enumerate(claims, 1):
@@ -538,8 +466,6 @@ async def handle_claim_suggestions(
         buttons.append({"id": button_id, "title": button_title})
 
         button_id_to_claim[button_id] = suggestion
-
-    print(buttons)
 
     if buttons:
         sent_message = await send_interactive_buttons(
@@ -555,7 +481,6 @@ async def handle_claim_suggestions(
             bot_message_id = sent_message["messages"][0]["id"]
             message_id_to_bot_message[bot_message_id] = tailored_response
     else:
-        # Fallback to regular message if no buttons
         sent_message = await send_whatsapp_message(
             phone_number,
             tailored_response,

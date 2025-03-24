@@ -33,8 +33,7 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
 
     intent_response = await generate(intent_prompt, message_text)
     try:
-        cleaned_response = intent_response.replace("'", '"')
-        intent_data = json.loads(cleaned_response)
+        intent_data = json.loads(intent_response)
         return intent_data
     except json.JSONDecodeError:
         logger.info(f"Failed to decode intent response: {intent_response}")
@@ -42,7 +41,7 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
 
 
 async def handle_fact_check_intent(
-    message_text: str, context: str, claims: list = [], is_reply: bool = False
+    message_text: str, context: str, claims: list = []
 ) -> Tuple[str, str]:
     """Generate response for fact check intent.
 
@@ -50,7 +49,6 @@ async def handle_fact_check_intent(
         message_text: The user's message text
         context: Previous conversation context
         claims: List of claims to fact check
-        is_reply: Whether this is a reply to a previously suggested claim
 
     Returns:
         A tuple containing (prompt, evidence_text)
@@ -90,19 +88,11 @@ async def handle_fact_check_intent(
             logger.error(f"Error in concurrent claim processing: {str(e)}")
             raise
 
-    if is_reply:
-        fact_check_prompt = get_prompt(
-            "fact_check_reply",
-            message_text=message_text,
-            claim=claims[0],
-            context=context,
-        )
-    else:
-        fact_check_prompt = get_prompt(
-            "fact_check",
-            message_text=message_text,
-            context=context,
-        )
+    fact_check_prompt = get_prompt(
+        "fact_check",
+        message_text=message_text,
+        context=context,
+    )
 
     return fact_check_prompt, final_evidence_text
 

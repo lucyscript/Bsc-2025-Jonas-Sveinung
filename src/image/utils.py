@@ -8,6 +8,8 @@ import aiohttp
 import pytesseract
 from PIL import Image
 
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +32,7 @@ async def get_image_url(image_id: str) -> str:
 async def download_image(image_url: str) -> bytes:
     """Download the image from the provided URL."""
     headers = {
-        "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}",
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
     }
     async with aiohttp.ClientSession() as session:
         async with session.get(image_url, headers=headers) as response:
