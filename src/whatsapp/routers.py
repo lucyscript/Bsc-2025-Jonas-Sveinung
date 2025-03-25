@@ -475,19 +475,15 @@ async def handle_claim_suggestions(
             message_id,
         )
 
-        message_context[phone_number].append(f"Bot: {tailored_response}\n")
-
-        if sent_message and "messages" in sent_message:
-            bot_message_id = sent_message["messages"][0]["id"]
-            message_id_to_bot_message[bot_message_id] = tailored_response
     else:
         sent_message = await send_whatsapp_message(
             phone_number,
             tailored_response,
             message_id,
         )
-        message_context[phone_number].append(f"Bot: {tailored_response}\n")
+        
+    message_context[phone_number].append(f"Bot: {tailored_response}\n")
 
-        if sent_message and "messages" in sent_message:
-            bot_message_id = sent_message["messages"][0]["id"]
-            message_id_to_bot_message[bot_message_id] = tailored_response
+    if sent_message and "messages" in sent_message:
+        bot_message_id = sent_message["messages"][0]["id"]
+        message_id_to_bot_message[bot_message_id] = tailored_response
