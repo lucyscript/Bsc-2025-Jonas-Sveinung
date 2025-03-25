@@ -271,6 +271,11 @@ async def handle_message_with_intent(
                         )
                     )
                     prompt, evidence_data = fact_check_result2
+                    if evidence_data.strip() == "[]":
+                        await handle_claim_suggestions(
+                            message_id, phone_number, message_text, context
+                        )
+                        return
                     response = await generate(prompt, evidence_data)
                 except Exception as e:
                     logger.warning(
