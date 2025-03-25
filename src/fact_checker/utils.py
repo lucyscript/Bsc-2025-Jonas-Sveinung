@@ -249,27 +249,39 @@ def clean_facts(json_data: dict | None) -> list:
         items_to_process = []
         if (
             "collection" in json_data
-            and json_data["collection"] == "stance_detection"
+            and json_data.get("collection") == "stance_detection"
         ):
             items_to_process = [json_data]
         else:
             items_to_process = json_data.get("text", [])
+            if items_to_process is None:
+                return cleaned_results
 
         for item in items_to_process:
+            if item is None:
+                continue
+
             evidence_list = item.get("evidence", [])
             if not evidence_list:
                 cleaned_results.append({"error": "No evidence found"})
                 continue
 
-            claim_text = item.get("claim", "").replace('"', "'")
-            summary = (
-                " ".join(str(s) for s in item.get("summary", [])).replace(
-                    '"', "'"
-                )
-                if isinstance(item.get("summary"), list)
-                else item.get("summary", "").replace('"', "'")
-            )
-            fix = item.get("fix", "").replace('"', "'")
+            claim_text = item.get("claim", "")
+            if claim_text is not None:
+                claim_text = claim_text.replace('"', "'")
+
+            summary = item.get("summary", "")
+            if summary is not None:
+                if isinstance(summary, list):
+                    summary = " ".join(str(s) for s in summary if s is not None)
+                    if summary:
+                        summary = summary.replace('"', "'")
+                elif isinstance(summary, str):
+                    summary = summary.replace('"', "'")
+
+            fix = item.get("fix", "")
+            if fix is not None:
+                fix = fix.replace('"', "'")
 
             final_verdict = "Uncertain"
             if item.get("finalPrediction") is not None:
@@ -289,6 +301,9 @@ def clean_facts(json_data: dict | None) -> list:
             refuting_evidence = []
 
             for evidence in evidence_list:
+                if evidence is None:
+                    continue
+
                 label = evidence.get("labelDescription", "")
                 if label not in ["SUPPORTS", "REFUTES"]:
                     continue
@@ -296,18 +311,25 @@ def clean_facts(json_data: dict | None) -> list:
                 sim_score = evidence.get("simScore", 0)
                 evidence_snippet = ""
                 if sim_score > 0.5:
-                    evidence_snippet = (
-                        evidence.get("evidenceSnippet", "")[:1000] + "..."
-                        if len(evidence.get("evidenceSnippet", "")) > 1000
-                        else evidence.get("evidenceSnippet", "")
-                    )
+                    snippet = evidence.get("evidenceSnippet", "")
+                    if snippet is not None:
+                        evidence_snippet = (
+                            snippet[:1000] + "..."
+                            if len(snippet) > 1000
+                            else snippet
+                        )
+
+                domain_reliability_obj = (
+                    evidence.get("domain_reliability", {}) or {}
+                )
+                reliability = domain_reliability_obj.get(
+                    "Reliability", "Unknown"
+                )
 
                 evidence_entry = {
                     "labelDescription": label,
                     "domain_name": evidence.get("domainName", ""),
-                    "domainReliability": evidence.get(
-                        "domain_reliability", {}
-                    ).get("Reliability", "Unknown"),
+                    "domainReliability": reliability,
                     "url": evidence.get("url", ""),
                     "evidenceSnippet": evidence_snippet,
                 }

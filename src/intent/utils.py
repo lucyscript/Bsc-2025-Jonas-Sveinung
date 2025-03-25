@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import re
 from typing import Any, Dict, Tuple
 
 from src.config.prompts import get_prompt
@@ -41,7 +40,7 @@ async def detect_intent(message_text: str, context: str = "") -> Dict[str, Any]:
 
 
 async def handle_fact_check_intent(
-    message_text: str, context: str, claims: list = []
+    message_text: str, context: str, claims: list = [], urls: list = []
 ) -> Tuple[str, str]:
     """Generate response for fact check intent.
 
@@ -49,19 +48,19 @@ async def handle_fact_check_intent(
         message_text: The user's message text
         context: Previous conversation context
         claims: List of claims to fact check
+        urls: List of URLs to fact check
 
     Returns:
         A tuple containing (prompt, evidence_text)
     """
-    url_match = re.search(r"https?://\S+", message_text)
     final_evidence_text = ""
 
-    if url_match:
-        url = url_match.group(0)
-        fact_results = await fact_check(url)
-        evidence = clean_facts(fact_results)
+    if urls:
+        for url in urls:
+            fact_results = await fact_check(url)
+            evidence = clean_facts(fact_results)
 
-        final_evidence_text += f"{evidence}\n"
+            final_evidence_text += f"{evidence}\n"
 
     if claims:
         try:
