@@ -257,51 +257,12 @@ async def handle_message_with_intent(
 ):
     """Process messages using intent detection."""
     try:
-        intent_data = await detect_intent(message_text, context)
         message_length = len(message_text.split())
-        logger.info(f"Intent data: {intent_data}")
 
-        intent_type = intent_data.get("intent_type", "fact_check")
-        split_claims = intent_data.get("split_claims")
-
-        if intent_type == "fact_check" and message_length < 100:
-            try:
-                claims = split_claims if split_claims else [message_text]
-                # relevant_claims = await asyncio.gather(
-                #     *[detect_claims(claim) for claim in claims]
-                # )
-                # claims_list = [
-                #     claim for sublist in relevant_claims for claim in sublist
-                # ]
-                # if not claims_list:
-                #     await handle_claim_suggestions(
-                #         message_id, phone_number, message_text, context
-                #     )
-                #     return
-                fact_check_result: Tuple[str, str] = (
-                    await handle_fact_check_intent(
-                        message_text, context, claims
-                    )
-                )
-                prompt, evidence_data = fact_check_result
-
-                if evidence_data.strip() == "[]":
-                    await handle_claim_suggestions(
-                        message_id, phone_number, message_text, context
-                    )
-                    return
-
-                response = await generate(prompt, evidence_data)
-            except Exception as e:
-                logger.warning(f"Failed to handle fact check intent: {e}")
-                response = "⚠️ Temporary service issue. Please try again!"
-        elif intent_type == "fact_check" and message_length >= 100:
+        if message_length >= 100:
             claims = await detect_claims(message_text)
             if not claims:
-                await handle_claim_suggestions(
-                    message_id, phone_number, message_text, context
-                )
-                return
+                response = await handle_general_intent(message_text, context)
             else:
                 try:
                     fact_check_result2: Tuple[str, str] = (
@@ -316,21 +277,62 @@ async def handle_message_with_intent(
                         f"Failed to handle fact check intent with claims: {e}"
                     )
                     response = "⚠️ Temporary service issue. Please try again!"
-        elif intent_type == "general":
-            try:
-                response = await handle_general_intent(message_text, context)
-            except Exception as e:
-                logger.warning(f"Failed to handle general intent: {e}")
-                response = "⚠️ Temporary service issue. Please try again!"
+
         else:
-            try:
-                await handle_claim_suggestions(
-                    message_id, phone_number, message_text, context
-                )
-                return
-            except Exception as e:
-                logger.warning(f"Failed to handle claim suggestions: {e}")
-                response = "⚠️ Temporary service issue. Please try again!"
+            intent_data = await detect_intent(message_text, context)
+            logger.info(f"Intent data: {intent_data}")
+
+            intent_type = intent_data.get("intent_type")
+            split_claims = intent_data.get("split_claims")
+            if intent_type == "fact_check":
+                try:
+                    claims = split_claims if split_claims else [message_text]
+                    # relevant_claims = await asyncio.gather(
+                    #     *[detect_claims(claim) for claim in claims]
+                    # )
+                    # claims_list = [
+                    #     claim for sublist in relevant_claims
+                    #     for claim in sublist
+                    # ]
+                    # if not claims_list:
+                    #     await handle_claim_suggestions(
+                    #         message_id, phone_number, message_text, context
+                    #     )
+                    #     return
+                    fact_check_result: Tuple[str, str] = (
+                        await handle_fact_check_intent(
+                            message_text, context, claims
+                        )
+                    )
+                    prompt, evidence_data = fact_check_result
+
+                    if evidence_data.strip() == "[]":
+                        await handle_claim_suggestions(
+                            message_id, phone_number, message_text, context
+                        )
+                        return
+
+                    response = await generate(prompt, evidence_data)
+                except Exception as e:
+                    logger.warning(f"Failed to handle fact check intent: {e}")
+                    response = "⚠️ Temporary service issue. Please try again!"
+            elif intent_type == "general":
+                try:
+                    response = await handle_general_intent(
+                        message_text, context
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to handle general intent: {e}")
+                    response = "⚠️ Temporary service issue. Please try again!"
+            else:
+                try:
+                    await handle_claim_suggestions(
+                        message_id, phone_number, message_text, context
+                    )
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed to handle claim suggestions: {e}")
+                    response = "⚠️ Temporary service issue. Please try again!"
 
         sent_message = await send_whatsapp_message(
             phone_number=phone_number,
@@ -481,7 +483,7 @@ async def handle_claim_suggestions(
             tailored_response,
             message_id,
         )
-        
+
     message_context[phone_number].append(f"Bot: {tailored_response}\n")
 
     if sent_message and "messages" in sent_message:
