@@ -257,9 +257,30 @@ async def handle_message_with_intent(
 ):
     """Process messages using intent detection."""
     try:
+        urls = re.findall(r"https?://\S+", message_text)
         message_length = len(message_text.split())
 
-        if message_length >= 100:
+        if urls:
+            try:
+                fact_check_result1: Tuple[str, str] = (
+                    await handle_fact_check_intent(
+                        message_text, context, [], urls
+                    )
+                )
+                prompt, evidence_data = fact_check_result1
+
+                if evidence_data.strip() == "[]":
+                    await handle_claim_suggestions(
+                        message_id, phone_number, message_text, context
+                    )
+                    return
+
+                response = await generate(prompt, evidence_data)
+            except Exception as e:
+                logger.warning(f"Failed to handle URL fact check: {e}")
+                response = "⚠️ Temporary service issue. Please try again!"
+
+        elif message_length >= 100:
             claims = await detect_claims(message_text)
             if not claims:
                 response = await handle_general_intent(message_text, context)
