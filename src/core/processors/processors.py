@@ -3,10 +3,7 @@
 import logging
 from typing import Dict, List, Optional, Tuple
 
-from src.api.whatsapp.utils import (
-    send_interactive_buttons,
-    send_whatsapp_message,
-)
+from src.api.whatsapp.utils import process_whatsapp_message
 from src.core.client.client import generate
 from src.core.handlers.handlers import (
     handle_claim_suggestions,
@@ -36,45 +33,13 @@ def initialize_state(
     button_id_to_claim = id_to_claim
 
 
-async def process_tracked_message(
-    phone_number: str,
-    message_id: str,
-    response: str,
-    buttons: Optional[List[Dict[str, str]]] = None,
-) -> None:
-    """Send a message and track it in the context.
-
-    Args:
-        phone_number: The user's phone number
-        message_id: The original message ID
-        response: The response text to send
-        buttons: List of button objects if using interactive buttons
-    """
-    try:
-        if buttons:
-            sent_message = await send_interactive_buttons(
-                phone_number, response, buttons, message_id
-            )
-        else:
-            sent_message = await send_whatsapp_message(
-                phone_number, response, message_id
-            )
-
-        message_context[phone_number].append(f"Bot: {response}\n")
-
-        if sent_message and "messages" in sent_message:
-            bot_message_id = sent_message["messages"][0]["id"]
-            message_id_to_bot_message[bot_message_id] = response
-    except Exception as e:
-        logger.error(f"Error sending message: {e}")
-        raise
-
-
 async def process_message_response(
-    phone_number: str,
+    user_id: str,
+    phone_number: Optional[str],
     message_id: str,
     message_text: str,
     context: str,
+    platform: str,
 ):
     """Process a message and send the response via WhatsApp."""
     try:
@@ -87,31 +52,41 @@ async def process_message_response(
                 button_id_to_claim[btn_id] = claim
 
             await process_tracked_message(
+                user_id,
                 phone_number,
                 message_id,
                 response,
-                buttons=buttons,
+                buttons,
+                platform,
             )
         elif result:
-            await process_tracked_message(phone_number, message_id, result)
+            await process_tracked_message(
+                user_id, phone_number, message_id, result, None, platform
+            )
         else:
             error_msg = (
                 "Sorry, I couldn't process your request. "
                 "Please try again or rephrase your message."
             )
-            await process_tracked_message(phone_number, message_id, error_msg)
+            await process_tracked_message(
+                user_id, phone_number, message_id, error_msg, None, platform
+            )
     except Exception as e:
         logger.error(f"Error processing message: {e}")
         error_msg = "Sorry, I encountered an error processing your request."
-        await process_tracked_message(phone_number, message_id, error_msg)
+        await process_tracked_message(
+            user_id, phone_number, message_id, error_msg, None, platform
+        )
 
 
 async def process_fact_check_response(
-    phone_number: str,
+    user_id: str,
+    phone_number: Optional[str],
     message_id: str,
     message_text: str,
     context: str,
     claim: str,
+    platform: str,
 ):
     """Process a fact check request from button selection and send response."""
     try:
@@ -130,68 +105,124 @@ async def process_fact_check_response(
                     button_id_to_claim[btn_id] = claim
 
                 await process_tracked_message(
+                    user_id,
                     phone_number,
                     message_id,
                     response,
-                    buttons=buttons,
+                    buttons,
+                    platform,
                 )
             else:
                 response = await generate(prompt, evidence_data)
                 await process_tracked_message(
-                    phone_number, message_id, response
+                    user_id, phone_number, message_id, response, None, platform
                 )
         else:
             error_msg = "Sorry, I couldn't process this fact check request."
-            await process_tracked_message(phone_number, message_id, error_msg)
+            await process_tracked_message(
+                user_id,
+                phone_number,
+                message_id,
+                error_msg,
+                None,
+                platform,
+            )
     except Exception as e:
         logger.error(f"Error processing fact check: {e}")
         error_msg = "Sorry, I encountered an error checking this claim."
-        await process_tracked_message(phone_number, message_id, error_msg)
+        await process_tracked_message(
+            user_id, phone_number, message_id, error_msg, None, platform
+        )
 
 
 async def process_image_response(
-    phone_number: str,
+    user_id: str,
+    phone_number: Optional[str],
     message_id: str,
     image_id: str,
     caption: str,
+    platform: str,
 ):
     """Process an image message and send the response via WhatsApp."""
     try:
         text_from_image = await handle_image(image_id, caption)
 
-        message_context[phone_number].append(
+        message_context[user_id].append(
             f"User sent image with text: {text_from_image}\n"
         )
 
         if not text_from_image.strip():
             error_msg = """I can only understand text in images...\n
             No text was found in this one."""
-            await process_tracked_message(phone_number, message_id, error_msg)
+            await process_tracked_message(
+                user_id, phone_number, message_id, error_msg, None, platform
+            )
             return
 
-        context = "\n".join(message_context[phone_number][:-1])
+        context = "\n".join(message_context[user_id][:-1])
         await process_message_response(
-            phone_number, message_id, text_from_image, context
+            user_id,
+            phone_number,
+            message_id,
+            text_from_image,
+            context,
+            platform,
         )
 
     except Exception as e:
         logger.error(f"Error processing image: {e}")
         error_msg = "Sorry, I encountered an error processing your image."
-        await process_tracked_message(phone_number, message_id, error_msg)
+        await process_tracked_message(
+            user_id, phone_number, message_id, error_msg, None, platform
+        )
 
 
 async def process_reaction(
     emoji: str,
     claim_text: str,
-    phone_number: str,
 ):
     """Process user reactions (emoji) to messages."""
     try:
         success = await handle_reaction(emoji, claim_text)
         if not success:
             logger.warning(
-                "Failed to process reaction for user "
-                f"{phone_number}: {emoji} on {claim_text}"
+                f"Failed to process reaction for user: {emoji} on {claim_text}"
             )
     except Exception as e:
         logger.error(f"Error in reaction processing: {e}")
+
+
+async def process_tracked_message(
+    user_id: str,
+    phone_number: Optional[str],
+    message_id: str,
+    response: str,
+    buttons: Optional[List[Dict[str, str]]] = None,
+    platform: str = "",
+) -> None:
+    """Send a message and track it in the context.
+
+    Args:
+        user_id: The user's ID
+        phone_number: The user's phone number
+        message_id: The original message ID
+        response: The response text to send
+        buttons: List of button objects if using interactive buttons
+        platform: The platform to send the message to
+    """
+    try:
+        if platform == "whatsapp":
+            sent_message = await process_whatsapp_message(
+                phone_number, message_id, response, buttons
+            )
+
+            message_context[user_id].append(f"Bot: {response}\n")
+
+            if sent_message and "messages" in sent_message:
+                bot_message_id = sent_message["messages"][0]["id"]
+                message_id_to_bot_message[bot_message_id] = response
+        elif platform == "telegram":
+            pass
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        raise

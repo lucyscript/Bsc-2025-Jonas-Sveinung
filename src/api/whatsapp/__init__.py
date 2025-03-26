@@ -1,5 +1,6 @@
 """WhatsApp integration package."""
 
-from src.api.whatsapp import processors, routers, utils
+from src.api.whatsapp import routers, utils
+from src.core.processors import processors
 
 __all__ = ["routers", "processors", "utils"]
