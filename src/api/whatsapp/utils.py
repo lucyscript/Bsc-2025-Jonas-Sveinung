@@ -2,6 +2,7 @@
 
 import logging
 import os
+from typing import Dict, List, Optional
 
 import aiohttp
 from fastapi import HTTPException
@@ -123,3 +124,32 @@ async def send_interactive_buttons(
             status_code=500,
             detail="Failed to send interactive WhatsApp message",
         )
+
+
+async def process_whatsapp_message(
+    phone_number: str,
+    message_id: str,
+    response: str,
+    buttons: Optional[List[Dict[str, str]]] = None,
+) -> Dict:
+    """Send a message and track it in the context.
+
+    Args:
+        phone_number: The user's phone number
+        message_id: The original message ID
+        response: The response text to send
+        buttons: List of button objects if using interactive buttons
+    """
+    try:
+        if buttons:
+            return await send_interactive_buttons(
+                phone_number, response, buttons, message_id
+            )
+        else:
+            return await send_whatsapp_message(
+                phone_number, response, message_id
+            )
+
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        raise

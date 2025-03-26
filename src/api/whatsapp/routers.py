@@ -8,7 +8,7 @@ from typing import Dict
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
-from src.api.whatsapp.processors import (
+from src.core.processors.processors import (
     initialize_state,
     process_fact_check_response,
     process_image_response,
@@ -54,6 +54,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
             raise HTTPException(400, "Invalid webhook format")
 
         for entry in payload.get("entry", []):
+            user_id = entry.get("id", "")
             for change in entry.get("changes", []):
                 message_data = change.get("value", {})
                 messages = message_data.get("messages", [])
@@ -62,15 +63,15 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                 if not messages or not contacts:
                     continue
 
+                if user_id not in message_context:
+                    message_context[user_id] = []
+
                 try:
                     message = messages[0]
                     contact = contacts[0]
                     message_type = message.get("type")
                     phone_number = contact.get("wa_id", "")
                     message_id = message.get("id", "")
-
-                    if phone_number not in message_context:
-                        message_context[phone_number] = []
 
                     if message_type == "text":
                         raw_text = message.get("text", {}).get("body", "")
@@ -107,9 +108,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                     replied_to_id
                                 ].replace('"', "'")
 
-                                context = "\n".join(
-                                    message_context[phone_number]
-                                )
+                                context = "\n".join(message_context[user_id])
 
                                 context += (
                                     "\n\nUser is currently replying to:"
@@ -118,23 +117,27 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
                                 background_tasks.add_task(
                                     process_message_response,
+                                    user_id,
                                     phone_number,
                                     message_id,
                                     message_text,
                                     context,
+                                    "whatsapp",
                                 )
                                 continue
 
-                        message_context[phone_number].append(
+                        message_context[user_id].append(
                             f"User: {message_text}\n"
                         )
-                        context = "\n".join(message_context[phone_number][:-1])
+                        context = "\n".join(message_context[user_id][:-1])
                         background_tasks.add_task(
                             process_message_response,
+                            user_id,
                             phone_number,
                             message_id,
                             message_text,
                             context,
+                            "whatsapp",
                         )
 
                     elif message_type == "interactive":
@@ -150,11 +153,9 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
                             if button_id in button_id_to_claim:
                                 claim = button_id_to_claim[button_id]
-                                context = "\n".join(
-                                    message_context[phone_number]
-                                )
+                                context = "\n".join(message_context[user_id])
 
-                                message_context[phone_number].append(
+                                message_context[user_id].append(
                                     f"User selected: {button_title}\n"
                                 )
 
@@ -165,11 +166,13 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
                                 background_tasks.add_task(
                                     process_fact_check_response,
+                                    user_id,
                                     phone_number,
                                     message_id,
                                     button_title,
                                     context,
                                     claim,
+                                    "whatsapp",
                                 )
 
                     elif message_type == "reaction":
@@ -177,7 +180,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         emoji = reaction.get("emoji")
                         id_reacted_to = reaction.get("message_id")
 
-                        message_context[phone_number].append(
+                        message_context[user_id].append(
                             f"User reacted with '{emoji}' "
                             f"on message '{id_reacted_to}'\n"
                         )
@@ -189,7 +192,6 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                 process_reaction,
                                 emoji,
                                 original_text,
-                                phone_number,
                             )
 
                     elif message_type == "image":
@@ -199,18 +201,23 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         if image_id:
                             background_tasks.add_task(
                                 process_image_response,
+                                user_id,
                                 phone_number,
                                 message_id,
                                 image_id,
                                 caption,
+                                "whatsapp",
                             )
                         else:
                             error_msg = "No image ID found. Please try again."
                             background_tasks.add_task(
                                 process_tracked_message,
+                                user_id,
                                 phone_number,
                                 message_id,
                                 error_msg,
+                                None,
+                                "whatsapp",
                             )
 
                     else:
@@ -219,9 +226,12 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                         )
                         background_tasks.add_task(
                             process_tracked_message,
+                            user_id,
                             phone_number,
                             message_id,
                             error_msg,
+                            None,
+                            "whatsapp",
                         )
 
                 except (KeyError, IndexError):
