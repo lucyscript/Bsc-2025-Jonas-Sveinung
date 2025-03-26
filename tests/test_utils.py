@@ -19,7 +19,7 @@ def include_whatsapp_router():
     We import it after setting the VERIFY_TOKEN so that the module-level
     variable gets updated.
     """
-    from src.whatsapp.routers import router as whatsapp_router
+    from src.api.whatsapp.routers import router as whatsapp_router
 
     app.include_router(whatsapp_router)
 
@@ -33,7 +33,7 @@ def test_verify_webhook_success(monkeypatch):
     monkeypatch.setenv("VERIFY_TOKEN", test_token)
 
     # Import and reload the routes module so that VERIFY_TOKEN is read again.
-    import src.whatsapp.routers as routes
+    import src.api.whatsapp.routers as routes
 
     importlib.reload(routes)
     routes.VERIFY_TOKEN = test_token
@@ -56,7 +56,7 @@ def test_verify_webhook_failure(monkeypatch):
     test_token = "test_verify_token"
     monkeypatch.setenv("VERIFY_TOKEN", test_token)
 
-    import src.whatsapp.routers as routes
+    import src.api.whatsapp.routers as routes
 
     importlib.reload(routes)
     routes.VERIFY_TOKEN = test_token

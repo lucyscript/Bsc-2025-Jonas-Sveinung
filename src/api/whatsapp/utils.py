@@ -37,7 +37,7 @@ async def send_whatsapp_message(phone_number: str, message: str, reply_to: str):
     }
 
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
+        timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
                 url, json=payload, headers=headers
