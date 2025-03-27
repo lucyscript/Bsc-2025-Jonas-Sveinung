@@ -3,7 +3,7 @@
 import logging
 import os
 import re
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 from fastapi import HTTPException

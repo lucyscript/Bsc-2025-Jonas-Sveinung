@@ -1,24 +1,23 @@
 """Telegram router."""
 
-from typing import Dict, List, Optional, Any
 import logging
 import unicodedata
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
+from typing import Optional
 
-from src.messaging_api.telegram.utils import (
-    process_telegram_message,
-    extract_message_data,
-    set_webhook,
-    delete_webhook,
-)
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+
 from src.core.processors.processors import (
-    message_context,
-    message_id_to_bot_message,
     button_id_to_claim,
-    process_message_response,
+    message_context,
     process_fact_check_response,
+    process_message_response,
 )
-from src.db.utils import connect
+from src.messaging_api.telegram.utils import (
+    delete_webhook,
+    extract_message_data,
+    process_telegram_message,
+    set_webhook,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

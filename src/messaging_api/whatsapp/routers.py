@@ -3,15 +3,14 @@
 import logging
 import os
 import unicodedata
-from typing import Dict
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from src.core.processors.processors import (
+    button_id_to_claim,
     message_context,
     message_id_to_bot_message,
-    button_id_to_claim,
     process_fact_check_response,
     process_image_response,
     process_message_response,
@@ -24,6 +23,7 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+
 
 @router.get("/webhook")
 async def verify_webhook(request: Request):
