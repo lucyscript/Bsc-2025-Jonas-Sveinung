@@ -4,7 +4,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 from src.api.whatsapp.utils import process_whatsapp_message
-from src.core.client.client import generate
+from src.core.factiverse.client import generate
 from src.core.handlers.handlers import (
     handle_claim_suggestions,
     handle_fact_check_intent,

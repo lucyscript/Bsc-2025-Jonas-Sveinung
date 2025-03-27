@@ -4,10 +4,10 @@ import json
 import logging
 from typing import Any, Dict
 
-from src.core.client.client import (
+from src.core.config.prompts import get_prompt
+from src.core.factiverse.client import (
     generate,
 )
-from src.core.config.prompts import get_prompt
 
 logger = logging.getLogger(__name__)
 

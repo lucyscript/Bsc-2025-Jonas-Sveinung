@@ -8,13 +8,13 @@ import string
 import time
 from typing import Dict, List, Optional, Tuple, Union
 
-from src.core.client.client import (
+from src.core.config.prompts import get_prompt
+from src.core.factiverse.client import (
     detect_claims,
     fact_check,
     generate,
     stance_detection,
 )
-from src.core.config.prompts import get_prompt
 from src.core.utils.cleaner import clean_facts
 from src.core.utils.image import (
     download_image,
