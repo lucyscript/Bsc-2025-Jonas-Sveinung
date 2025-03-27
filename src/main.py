@@ -9,6 +9,7 @@ import logging
 from fastapi import FastAPI
 
 from src.api.whatsapp.routers import router as whatsapp_router
+from src.api.telegram.routers import router as telegram_router
 from src.db.routers import router as db_router
 
 app = FastAPI()
@@ -16,6 +17,7 @@ app = FastAPI()
 logging.basicConfig(level=logging.INFO)
 
 app.include_router(whatsapp_router)
+app.include_router(telegram_router)
 app.include_router(db_router)
 
 

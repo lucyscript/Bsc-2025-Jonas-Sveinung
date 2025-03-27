@@ -211,18 +211,32 @@ async def process_tracked_message(
         platform: The platform to send the message to
     """
     try:
+        # Add user's response to context regardless of platform
+        message_context[user_id].append(f"Bot: {response}\n")
+        
         if platform == "whatsapp":
             sent_message = await process_whatsapp_message(
                 phone_number, message_id, response, buttons
             )
 
-            message_context[user_id].append(f"Bot: {response}\n")
-
             if sent_message and "messages" in sent_message:
                 bot_message_id = sent_message["messages"][0]["id"]
                 message_id_to_bot_message[bot_message_id] = response
         elif platform == "telegram":
-            pass
+            from src.api.telegram.utils import process_telegram_message
+            
+            # For Telegram, the phone_number is actually the chat_id
+            sent_message = await process_telegram_message(
+                phone_number,  # chat_id
+                message_id,
+                response,
+                buttons  # Pass the buttons parameter to process_telegram_message
+            )
+            
+            # Store the response for potential future references
+            if sent_message and "result" in sent_message and "message_id" in sent_message["result"]:
+                bot_message_id = str(sent_message["result"]["message_id"])
+                message_id_to_bot_message[bot_message_id] = response
     except Exception as e:
         logger.error(f"Error sending message: {e}")
         raise
