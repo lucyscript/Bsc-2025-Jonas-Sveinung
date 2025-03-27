@@ -3,7 +3,6 @@
 import logging
 from typing import Dict, List, Optional, Tuple
 
-from src.api.whatsapp.utils import process_whatsapp_message
 from src.core.client.client import generate
 from src.core.handlers.handlers import (
     handle_claim_suggestions,
@@ -12,6 +11,8 @@ from src.core.handlers.handlers import (
     handle_message_with_intent,
     handle_reaction,
 )
+from src.platform.telegram.utils import process_telegram_message
+from src.platform.whatsapp.utils import process_whatsapp_message
 
 logger = logging.getLogger(__name__)
 
@@ -211,9 +212,8 @@ async def process_tracked_message(
         platform: The platform to send the message to
     """
     try:
-        # Add user's response to context regardless of platform
         message_context[user_id].append(f"Bot: {response}\n")
-        
+
         if platform == "whatsapp":
             sent_message = await process_whatsapp_message(
                 phone_number, message_id, response, buttons
@@ -223,18 +223,15 @@ async def process_tracked_message(
                 bot_message_id = sent_message["messages"][0]["id"]
                 message_id_to_bot_message[bot_message_id] = response
         elif platform == "telegram":
-            from src.api.telegram.utils import process_telegram_message
-            
-            # For Telegram, the phone_number is actually the chat_id
             sent_message = await process_telegram_message(
-                phone_number,  # chat_id
-                message_id,
-                response,
-                buttons  # Pass the buttons parameter to process_telegram_message
+                phone_number, message_id, response, buttons
             )
-            
-            # Store the response for potential future references
-            if sent_message and "result" in sent_message and "message_id" in sent_message["result"]:
+
+            if (
+                sent_message
+                and "result" in sent_message
+                and "message_id" in sent_message["result"]
+            ):
                 bot_message_id = str(sent_message["result"]["message_id"])
                 message_id_to_bot_message[bot_message_id] = response
     except Exception as e:

@@ -1,27 +1,26 @@
 """Telegram router."""
-from typing import Dict, List, Optional, Any
+
 import logging
 import unicodedata
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
+from typing import Optional
 
-from src.api.telegram.utils import (
-    process_telegram_message,
-    extract_message_data,
-    set_webhook,
-    delete_webhook
-)
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+
 from src.core.processors.processors import (
-    message_context,
-    message_id_to_bot_message,
     button_id_to_claim,
+    message_context,
+    process_fact_check_response,
     process_message_response,
-    process_fact_check_response
 )
-from src.db.utils import connect
+from src.platform.telegram.utils import (
+    delete_webhook,
+    extract_message_data,
+    process_telegram_message,
+    set_webhook,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
 
 
 @router.post("/tgwebhook")
@@ -30,21 +29,21 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
         update = await request.json()
         data = extract_message_data(update)
-        
+
         if not data["chat_id"]:
             return {"status": "Error", "message": "Unsupported message type"}
-        
+
         if data["message_type"] == "callback_query":
             callback_data = data["callback_data"]
             if callback_data in button_id_to_claim:
                 claim = button_id_to_claim[callback_data]
                 user_id = data["chat_id"]
-                
+
                 if user_id in message_context:
                     context = "\n".join(message_context[user_id])
                 else:
                     context = ""
-                
+
                 background_tasks.add_task(
                     process_fact_check_response,
                     user_id,
@@ -53,22 +52,22 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                     claim,
                     context,
                     claim,
-                    "telegram"
+                    "telegram",
                 )
-                
+
                 return {"status": "processing"}
-        
+
         elif data["message_type"] == "message" and data["text"]:
             user_id = data["chat_id"]
             message_text = data["text"]
             message_id = data["message_id"]
-            
+
             message_text = (
                 unicodedata.normalize("NFKD", message_text)
                 .replace('"', "'")
                 .strip()
             )
-            
+
             replacements = {
                 "\xa0": " ",  # Non-breaking space
                 "\u2018": "'",  # Left single quote
@@ -79,18 +78,18 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                 "\u2014": "--",  # Em dash
                 "\u2026": "...",  # Ellipsis
             }
-            
+
             for char, replacement in replacements.items():
                 message_text = message_text.replace(char, replacement)
-            
+
             if user_id not in message_context:
                 message_context[user_id] = []
-            
+
             logger.info(f"User: {message_text}")
-            
+
             message_context[user_id].append(f"User: {message_text}\n")
             context = "\n".join(message_context[user_id][:-1])
-            
+
             background_tasks.add_task(
                 process_message_response,
                 user_id,
@@ -98,13 +97,13 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                 message_id,
                 message_text,
                 context,
-                "telegram"
+                "telegram",
             )
-            
+
             return {"status": "processing"}
-        
+
         return {"status": "success"}
-        
+
     except Exception as e:
         logger.error(f"Error processing webhook: {str(e)}")
         return {"status": "error", "message": str(e)}
@@ -134,16 +133,12 @@ async def remove_webhook():
 
 @router.post("/send-message")
 async def send_message(
-    chat_id: str,
-    message: str,
-    reply_to_message_id: Optional[str] = None
+    chat_id: str, message: str, reply_to_message_id: Optional[str] = None
 ):
     """Manual endpoint to send a message to a Telegram chat."""
     try:
         result = await process_telegram_message(
-            chat_id,
-            reply_to_message_id,
-            message
+            chat_id, reply_to_message_id, message
         )
         return {"status": "success", "result": result}
     except Exception as e:
