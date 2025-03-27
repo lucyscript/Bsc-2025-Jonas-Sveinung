@@ -9,7 +9,9 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from src.core.processors.processors import (
-    initialize_state,
+    message_context,
+    message_id_to_bot_message,
+    button_id_to_claim,
     process_fact_check_response,
     process_image_response,
     process_message_response,
@@ -22,13 +24,6 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
-
-message_context: Dict[str, list[str]] = {}
-message_id_to_bot_message: Dict[str, str] = {}
-button_id_to_claim: Dict[str, str] = {}
-
-initialize_state(message_context, message_id_to_bot_message, button_id_to_claim)
-
 
 @router.get("/webhook")
 async def verify_webhook(request: Request):
