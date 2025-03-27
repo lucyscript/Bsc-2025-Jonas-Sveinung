@@ -3,7 +3,6 @@
 import logging
 from typing import Dict, List, Optional, Tuple
 
-from src.api.whatsapp.utils import process_whatsapp_message
 from src.core.factiverse.client import generate
 from src.core.handlers.handlers import (
     handle_claim_suggestions,
@@ -12,6 +11,7 @@ from src.core.handlers.handlers import (
     handle_message_with_intent,
     handle_reaction,
 )
+from src.messaging_api.whatsapp.utils import process_whatsapp_message
 
 logger = logging.getLogger(__name__)
 
