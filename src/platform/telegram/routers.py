@@ -1,6 +1,7 @@
 """Telegram router."""
 
 import logging
+import re
 import unicodedata
 from typing import Optional
 
@@ -10,7 +11,10 @@ from src.core.processors.processors import (
     button_id_to_claim,
     message_context,
     process_fact_check_response,
+    process_image_response,
     process_message_response,
+    process_rating,
+    process_tracked_message,
 )
 from src.platform.telegram.utils import (
     delete_webhook,
@@ -62,6 +66,44 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             message_text = data["text"]
             message_id = data["message_id"]
 
+            rating_match = re.match(r"^(\d)️⃣\s+(.+)$", message_text)
+            if rating_match:
+                rating_value = rating_match.group(1)
+                rating_text = rating_match.group(2)
+
+                message_context[user_id].append(
+                    f"User rated with '{rating_value}' ({rating_text})\n"
+                )
+
+                if user_id in message_context:
+                    bot_messages = [
+                        msg
+                        for msg in message_context[user_id]
+                        if msg.startswith("Bot:")
+                    ]
+                    if bot_messages:
+                        last_bot_message = (
+                            bot_messages[-1].replace("Bot: ", "").strip()
+                        )
+                        background_tasks.add_task(
+                            process_rating,
+                            rating_value,
+                            last_bot_message,
+                        )
+
+                        background_tasks.add_task(
+                            process_tracked_message,
+                            user_id,
+                            data["chat_id"],
+                            message_id,
+                            f"Thanks for your {rating_value}-star rating!",
+                            None,
+                            "telegram",
+                            False,
+                        )
+
+                        return {"status": "rating_processed"}
+
             message_text = (
                 unicodedata.normalize("NFKD", message_text)
                 .replace('"', "'")
@@ -102,6 +144,32 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 
             return {"status": "processing"}
 
+        elif data["message_type"] == "image":
+            user_id = data["chat_id"]
+            image_id = data["image_id"]
+            message_id = data["message_id"]
+            caption = data["caption"] or ""
+
+            if user_id not in message_context:
+                message_context[user_id] = []
+
+            logger.info(f"User sent an image: {image_id}")
+
+            if caption:
+                logger.info(f"Image caption: {caption}")
+
+            background_tasks.add_task(
+                process_image_response,
+                user_id,
+                data["chat_id"],
+                message_id,
+                image_id,
+                caption,
+                "telegram",
+            )
+
+            return {"status": "processing_image"}
+
         return {"status": "success"}
 
     except Exception as e:
@@ -114,6 +182,7 @@ async def setup_webhook(webhook_url: str):
     """Set up the Telegram webhook."""
     try:
         result = await set_webhook(webhook_url)
+        logger.info(f"Webhook setup result: {result}")
         return {"status": "success", "result": result}
     except Exception as e:
         logger.error(f"Error setting up webhook: {str(e)}")

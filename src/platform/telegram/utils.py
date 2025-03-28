@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 from fastapi import HTTPException
 
+from src.core.utils.utils import fetch_url
+
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -122,11 +124,66 @@ async def send_interactive_buttons(
         )
 
 
+async def send_rating_keyboard(
+    chat_id: str, message: str, reply_to_message_id: Optional[str] = None
+) -> Dict:
+    """Send a message with a rating keyboard (1-6) via Telegram Bot API.
+
+    Args:
+        chat_id: The chat ID to send the message to
+        message: The message body text
+        reply_to_message_id: Optional message ID to reply to
+    """
+    url = f"{TELEGRAM_API_URL}/sendMessage"
+
+    keyboard = [
+        [{"text": "1️⃣ Very poor"}, {"text": "2️⃣ Poor"}, {"text": "3️⃣ Fair"}],
+        [{"text": "4️⃣ Good"}, {"text": "5️⃣ Very good"}, {"text": "6️⃣ Excellent"}],
+    ]
+
+    message_with_prompt = f"📊 Please rate this response (1-6)\n\n{message}"
+
+    payload = {
+        "chat_id": chat_id,
+        "text": message_with_prompt,
+        "parse_mode": "HTML",
+        "reply_markup": {
+            "keyboard": keyboard,
+            "resize_keyboard": True,
+            "one_time_keyboard": True,
+        },
+    }
+
+    if reply_to_message_id:
+        payload["reply_to_message_id"] = reply_to_message_id
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload) as response:
+                if response.status >= 400:
+                    error_text = await response.text()
+                    logger.error(f"Telegram API error: {error_text}")
+                    raise HTTPException(
+                        status_code=response.status,
+                        detail="Failed to send TG message with rating keyboard",
+                    )
+                return await response.json()
+
+    except aiohttp.ClientError as e:
+        logger.error(f"Telegram API error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send Telegram message with rating keyboard",
+        )
+
+
 async def process_telegram_message(
     chat_id: str,
     message_id: Optional[str] = None,
     response: str = "",
     buttons: Optional[List[Dict[str, str]]] = None,
+    add_rating: bool = True,
 ) -> Dict:
     """Send a message and track it in the context.
 
@@ -135,6 +192,7 @@ async def process_telegram_message(
         message_id: The original message ID to reply to (optional)
         response: The response text to send
         buttons: List of button objects if using interactive buttons
+        add_rating: Whether to add rating keyboard
     """
     try:
         response = convert_markdown_to_html(response)
@@ -143,6 +201,8 @@ async def process_telegram_message(
             return await send_interactive_buttons(
                 chat_id, response, buttons, message_id
             )
+        elif add_rating:
+            return await send_rating_keyboard(chat_id, response, message_id)
         else:
             return await send_telegram_message(chat_id, response, message_id)
 
@@ -206,6 +266,36 @@ async def delete_webhook() -> Dict:
         )
 
 
+async def get_telegram_image_url(file_id: str) -> str:
+    """Retrieve the image URL from Telegram API.
+
+    Args:
+        file_id: The ID of the image to retrieve
+
+    Returns:
+        The URL of the image
+    """
+    url = f"{TELEGRAM_API_URL}/getFile"
+
+    payload = {"file_id": file_id}
+
+    try:
+        result = await fetch_url(url, "POST", json_data=payload)
+        if result.get("ok") and "result" in result:
+            file_path = result["result"]["file_path"]
+            return (
+                f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
+            )
+        else:
+            logger.error(f"Invalid Telegram response: {result}")
+            raise HTTPException(
+                status_code=500, detail="Invalid response from Telegram API"
+            )
+    except Exception as e:
+        logger.error(f"Error getting Telegram image URL: {e}")
+        raise
+
+
 def extract_message_data(update: Dict[str, Any]) -> Dict[str, Optional[str]]:
     """Extract relevant data from a Telegram update.
 
@@ -221,16 +311,25 @@ def extract_message_data(update: Dict[str, Any]) -> Dict[str, Optional[str]]:
         "message_id": None,
         "text": None,
         "callback_data": None,
+        "image_id": None,
+        "caption": None,
     }
 
     if "message" in update:
         message = update["message"]
-        result["message_type"] = "message"
         result["chat_id"] = str(message["chat"]["id"])
         result["message_id"] = str(message["message_id"])
 
         if "text" in message:
+            result["message_type"] = "message"
             result["text"] = message["text"]
+        elif "photo" in message:
+            result["message_type"] = "image"
+            if message["photo"]:
+                result["image_id"] = message["photo"][-1]["file_id"]
+
+            if "caption" in message:
+                result["caption"] = message["caption"]
 
     elif "callback_query" in update:
         callback = update["callback_query"]

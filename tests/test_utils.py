@@ -32,7 +32,6 @@ def test_verify_webhook_success(monkeypatch):
     test_token = "test_verify_token"
     monkeypatch.setenv("VERIFY_TOKEN", test_token)
 
-    # Import and reload the routes module so that VERIFY_TOKEN is read again.
     import src.platform.whatsapp.routers as routes
 
     importlib.reload(routes)

@@ -14,10 +14,8 @@ logging.basicConfig(
 def connect():
     """Connect to the PostgreSQL database server."""
     try:
-        # Load database configuration
         config = load_config()
 
-        # Connecting to the PostgreSQL server
         logging.info("Connecting to the PostgreSQL server...")
         conn = psycopg2.connect(**config)
         logging.info("Connected to the PostgreSQL server.")

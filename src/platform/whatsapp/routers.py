@@ -14,6 +14,7 @@ from src.core.processors.processors import (
     process_fact_check_response,
     process_image_response,
     process_message_response,
+    process_rating,
     process_reaction,
     process_tracked_message,
 )
@@ -170,6 +171,44 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                     "whatsapp",
                                 )
 
+                        elif interactive_type == "list_reply":
+                            list_reply = interactive_data.get("list_reply", {})
+                            item_id = list_reply.get("id")
+                            item_title = list_reply.get("title")
+
+                            if item_id and item_id.startswith("rating_"):
+                                rating_value = item_id.replace("rating_", "")
+                                message_context[user_id].append(
+                                    f"User rated with \
+                                    '{rating_value}' ({item_title})\n"
+                                )
+
+                                original_message_id = message.get(
+                                    "context", {}
+                                ).get("id")
+                                if (
+                                    original_message_id
+                                    in message_id_to_bot_message
+                                ):
+                                    original_text = message_id_to_bot_message[
+                                        original_message_id
+                                    ]
+                                    background_tasks.add_task(
+                                        process_rating,
+                                        rating_value,
+                                        original_text,
+                                    )
+
+                                    background_tasks.add_task(
+                                        process_tracked_message,
+                                        user_id,
+                                        phone_number,
+                                        message_id,
+                                        f"Thanks for your {item_title} rating!",
+                                        None,
+                                        "whatsapp",
+                                        False,
+                                    )
                     elif message_type == "reaction":
                         reaction = message.get("reaction")
                         emoji = reaction.get("emoji")

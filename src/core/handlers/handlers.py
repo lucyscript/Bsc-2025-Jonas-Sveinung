@@ -166,20 +166,42 @@ async def handle_reaction(emoji: str, claim_text: str) -> bool:
     return True
 
 
-async def handle_image(image_id: str, caption: str = "") -> Optional[str]:
+async def handle_rating(rating: str, claim_text: str) -> bool:
+    """Handles numerical rating processing asynchronously.
+
+    Args:
+        rating: The numerical rating (1-6)
+        claim_text: The text being rated
+    """
+    conn = None
+    try:
+        conn = connect()
+        timestamp = int(time.time())
+        insert_feedback(conn, f"rating_{rating}", claim_text, timestamp)
+        return True
+    except Exception as e:
+        logger.error(f"Error processing rating: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
+async def handle_image(
+    image_id: str, caption: str = "", platform: str = ""
+) -> Optional[str]:
     """Process image messages by extracting text using OCR.
 
     Args:
-        image_id: The WhatsApp image ID
+        image_id: The image ID from WhatsApp or Telegram
         caption: Optional caption text
+        platform: The platform source (whatsapp or telegram)
 
     Returns:
         str: The extracted text from the image, or None if no text was found
     """
     try:
-        image_url_task = get_image_url(image_id)
-        image_url = await image_url_task
-
+        image_url = await get_image_url(image_id, platform)
         image_bytes = await download_image(image_url)
         image_text = extract_text_from_image(image_bytes)
 
