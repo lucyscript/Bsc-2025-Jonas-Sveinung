@@ -37,7 +37,7 @@ def initialize_state(
 
 async def process_message_response(
     user_id: str,
-    phone_number: Optional[str],
+    phone_number: str,
     message_id: str,
     message_text: str,
     context: str,
@@ -83,7 +83,7 @@ async def process_message_response(
 
 async def process_fact_check_response(
     user_id: str,
-    phone_number: Optional[str],
+    phone_number: str,
     message_id: str,
     message_text: str,
     context: str,
@@ -139,7 +139,7 @@ async def process_fact_check_response(
 
 async def process_image_response(
     user_id: str,
-    phone_number: Optional[str],
+    phone_number: str,
     message_id: str,
     image_id: str,
     caption: str,
@@ -153,7 +153,7 @@ async def process_image_response(
             f"User sent image with text: {text_from_image}\n"
         )
 
-        if not text_from_image or not text_from_image.strip():
+        if text_from_image is None or not text_from_image.strip():
             error_msg = """I can only understand text in images...\n
             No text was found in this one."""
             await process_tracked_message(
@@ -211,7 +211,7 @@ async def process_reaction(
 
 async def process_tracked_message(
     user_id: str,
-    phone_number: Optional[str],
+    phone_number: str,
     message_id: str,
     response: str,
     buttons: Optional[List[Dict[str, str]]] = None,
