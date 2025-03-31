@@ -125,6 +125,7 @@ def add_feedback(message_id, rating=None, emoji=None):
         rating: Numeric rating (1-6)
         emoji: Reaction emoji
     """
+    conn = None
     try:
         conn = connect()
         with conn.cursor() as cur:
@@ -144,6 +145,9 @@ def add_feedback(message_id, rating=None, emoji=None):
         logging.error(f"Error adding feedback: {e}")
         conn.rollback()
         raise
+    finally:
+        if conn:
+            conn.close()
 
 
 def record_conversation_message(
@@ -170,6 +174,7 @@ def record_conversation_message(
     Returns:
         Dictionary with conversation_id and message_id
     """
+    conn = None
     try:
         conn = connect()
         with conn.cursor() as cur:
@@ -204,3 +209,6 @@ def record_conversation_message(
     except Exception as e:
         logging.error(f"Error recording conversation message: {e}")
         raise
+    finally:
+        if conn:
+            conn.close()
