@@ -5,7 +5,6 @@ import logging
 import random
 import re
 import string
-import time
 from typing import Dict, List, Optional, Tuple, Union
 
 from src.core.client.client import (
@@ -24,7 +23,7 @@ from src.core.utils.image import (
 from src.core.utils.intent import (
     detect_intent,
 )
-from src.db.utils import connect, insert_feedback
+from src.db.utils import add_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -146,45 +145,41 @@ async def handle_message_with_intent(
     return response
 
 
-async def handle_reaction(emoji: str, claim_text: str) -> bool:
+async def handle_reaction(emoji: str, message_id: str) -> bool:
     """Handles reaction processing asynchronously.
 
     Args:
         emoji: The emoji reaction
-        claim_text: The text being reacted to
+        message_id: The ID of the message being reacted to
     """
-    conn = None
     try:
-        conn = connect()
-        timestamp = int(time.time())
-        insert_feedback(conn, emoji, claim_text, timestamp)
+        add_feedback(message_id, emoji=emoji)
     except Exception as e:
         logger.error(f"Error processing reaction: {e}")
-    finally:
-        if conn:
-            conn.close()
     return True
 
 
-async def handle_rating(rating: str, claim_text: str) -> bool:
+async def handle_rating(rating: str, message_id: Optional[str] = None) -> bool:
     """Handles numerical rating processing asynchronously.
 
     Args:
         rating: The numerical rating (1-6)
-        claim_text: The text being rated
+        message_id: Optional ID of the message being rated (for the new schema)
     """
-    conn = None
     try:
-        conn = connect()
-        timestamp = int(time.time())
-        insert_feedback(conn, f"rating_{rating}", claim_text, timestamp)
+        try:
+            rating_value = int(rating)
+        except ValueError:
+            rating_value = None
+
+        add_feedback(
+            message_id=message_id,
+            rating=rating_value,
+        )
         return True
     except Exception as e:
         logger.error(f"Error processing rating: {e}")
         return False
-    finally:
-        if conn:
-            conn.close()
 
 
 async def handle_image(
@@ -302,6 +297,11 @@ async def handle_fact_check_intent(
                 if isinstance(result, Exception):
                     logger.error(
                         f"Error processing claim {claims[i]}: {str(result)}"
+                    )
+                    final_evidence_text += (
+                        "{{'error': 'NO EVIDENCE FOUND FOR"
+                        f" {claims[i]}. IMPORTANT: DO NOT PROVIDE ANY "
+                        "ANALYSIS OR ELABORATION ON THE CLAIM.'}}"
                     )
                     continue
 

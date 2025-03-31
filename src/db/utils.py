@@ -16,7 +16,6 @@ def connect():
     try:
         config = load_config()
 
-        logging.info("Connecting to the PostgreSQL server...")
         conn = psycopg2.connect(**config)
         logging.info("Connected to the PostgreSQL server.")
         return conn
@@ -25,72 +24,184 @@ def connect():
         raise
 
 
-def create_feedback_table(conn):
-    """Creates the feedback table if it doesn't exist."""
-    logging.info("Creating feedback table...")
+def create_tables(conn):
+    """Creates all database tables if they don't exist."""
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                CREATE TABLE IF NOT EXISTS feedback (
-                    emoji TEXT,
-                    message_text TEXT,
-                    timestamp INTEGER
+                CREATE TABLE IF NOT EXISTS conversations (
+                    conversation_id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL,
+                    platform VARCHAR(50)
                 );
                 """
             )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS messages (
+                    message_id VARCHAR(255) PRIMARY KEY,
+                    conversation_id INT NOT NULL 
+                        REFERENCES conversations(conversation_id),
+                    sender VARCHAR(50) NOT NULL,
+                    content TEXT NOT NULL,
+                    message_type VARCHAR(50) DEFAULT 'text',
+                    sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
+
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS feedback (
+                    feedback_id SERIAL PRIMARY KEY,
+                    message_id VARCHAR(255) NOT NULL 
+                        REFERENCES messages(message_id),
+                    rating INT,
+                    emoji VARCHAR(10),
+                    intent VARCHAR(50)
+                );
+                """
+            )
+
             conn.commit()
-        logging.info("Feedback table created successfully.")
+        logging.info("Database tables created successfully.")
     except Exception as e:
-        logging.error(f"Error creating feedback table: {e}")
+        logging.error(f"Error creating database tables: {e}")
+        conn.rollback()
         raise
 
 
-def insert_feedback(conn, emoji, message_text, timestamp):
-    """Inserts feedback into the feedback table."""
-    logging.info("Inserting feedback...")
-    create_feedback_table(conn)
+def create_conversation(conn, user_id, platform=None):
+    """Creates a new conversation and returns the conversation_id."""
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO feedback (emoji, message_text, timestamp)
-                VALUES (%s, %s, %s);
+                INSERT INTO conversations (user_id, platform)
+                VALUES (%s, %s)
+                RETURNING conversation_id;
                 """,
-                (emoji, message_text, timestamp),
+                (user_id, platform),
             )
+            conversation_id = cur.fetchone()[0]
             conn.commit()
-        logging.info("Feedback inserted successfully.")
+        return conversation_id
     except Exception as e:
-        logging.error(f"Error inserting feedback: {e}")
+        logging.error(f"Error creating conversation: {e}")
+        conn.rollback()
         raise
 
 
-def get_all_feedback(conn):
-    """Retrieves all feedback from the feedback table and returns."""
-    logging.info("Retrieving all feedback...")
+def add_message(
+    conn, message_id, conversation_id, sender, content, message_type="text"
+):
+    """Adds a message to a conversation and returns the message_id."""
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT emoji, message_text, timestamp FROM feedback")
-            rows = cur.fetchall()
-            feedback_list = []
-            if rows:
-                logging.info("Feedback data:")
-                for row in rows:
-                    logging.info(
-                        f"  Emoji: {row[0]}, Message: {row[1]}, "
-                        f"Timestamp: {row[2]}"
-                    )
-                    feedback_list.append(
-                        {
-                            "emoji": row[0],
-                            "message_text": row[1],
-                            "timestamp": row[2],
-                        }
-                    )
-            else:
-                logging.info("No feedback data found.")
-            return feedback_list
+            cur.execute(
+                """
+                INSERT INTO messages 
+                    (message_id, conversation_id, sender, content, message_type)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING message_id;
+                """,
+                (message_id, conversation_id, sender, content, message_type),
+            )
+            message_id = cur.fetchone()[0]
+            conn.commit()
+        return message_id
     except Exception as e:
-        logging.error(f"Error retrieving feedback: {e}")
+        logging.error(f"Error adding message: {e}")
+        conn.rollback()
+        raise
+
+
+def add_feedback(message_id, rating=None, emoji=None):
+    """Adds feedback for a specific message.
+
+    Args:
+        message_id: ID of the bot message being rated
+        rating: Numeric rating (1-6)
+        emoji: Reaction emoji
+    """
+    try:
+        conn = connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO feedback 
+                (message_id, rating, emoji)
+                VALUES (%s, %s, %s)
+                RETURNING feedback_id;
+                """,
+                (message_id, rating, emoji),
+            )
+            feedback_id = cur.fetchone()[0]
+            conn.commit()
+        return feedback_id
+    except Exception as e:
+        logging.error(f"Error adding feedback: {e}")
+        conn.rollback()
+        raise
+
+
+def record_conversation_message(
+    message_id,
+    user_id,
+    platform,
+    message_text=None,
+    is_user_message=True,
+    message_type="text",
+):
+    """Records a message in a conversation.
+
+    This helper function is designed to be used with the WhatsApp and Telegram
+    routers, which share global dictionaries from processors.py.
+
+    Args:
+        message_id: ID of the message
+        user_id: User identifier (phone number or chat ID)
+        platform: "whatsapp" or "telegram"
+        message_text: The text content of the message
+        is_user_message: True if this is a message from the user, False if bot
+        message_type: Type of message (e.g., 'text', 'image')
+
+    Returns:
+        Dictionary with conversation_id and message_id
+    """
+    try:
+        conn = connect()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT conversation_id 
+                FROM conversations
+                WHERE user_id = %s AND platform = %s
+                ORDER BY conversation_id DESC
+                LIMIT 1;
+                """,
+                (user_id, platform),
+            )
+            row = cur.fetchone()
+
+        if row:
+            conversation_id = row[0]
+        else:
+            conversation_id = create_conversation(conn, user_id, platform)
+
+        sender = "user" if is_user_message else "bot"
+        message_id = add_message(
+            conn,
+            message_id,
+            conversation_id=conversation_id,
+            sender=sender,
+            content=message_text,
+            message_type=message_type,
+        )
+
+        return {"conversation_id": conversation_id, "message_id": message_id}
+    except Exception as e:
+        logging.error(f"Error recording conversation message: {e}")
         raise
