@@ -16,6 +16,7 @@ from src.core.processors.processors import (
     process_rating,
     process_tracked_message,
 )
+from src.db.utils import record_conversation_message
 from src.platform.telegram.utils import (
     delete_webhook,
     extract_message_data,
@@ -66,6 +67,10 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             message_text = data["text"]
             message_id = data["message_id"]
 
+            record_conversation_message(
+                message_id, user_id, "telegram", message_text, True, "text"
+            )
+
             rating_match = re.match(r"^(\d)️⃣\s+(.+)$", message_text)
             if rating_match:
                 rating_value = rating_match.group(1)
@@ -76,33 +81,24 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                 )
 
                 if user_id in message_context:
-                    bot_messages = [
-                        msg
-                        for msg in message_context[user_id]
-                        if msg.startswith("Bot:")
-                    ]
-                    if bot_messages:
-                        last_bot_message = (
-                            bot_messages[-1].replace("Bot: ", "").strip()
-                        )
-                        background_tasks.add_task(
-                            process_rating,
-                            rating_value,
-                            last_bot_message,
-                        )
+                    background_tasks.add_task(
+                        process_rating,
+                        rating_value,
+                        message_id,
+                    )
 
-                        background_tasks.add_task(
-                            process_tracked_message,
-                            user_id,
-                            data["chat_id"],
-                            message_id,
-                            f"Thanks for your {rating_value}-star rating!",
-                            None,
-                            "telegram",
-                            False,
-                        )
+                    background_tasks.add_task(
+                        process_tracked_message,
+                        user_id,
+                        data["chat_id"],
+                        message_id,
+                        f"Thanks for your {rating_value}-star rating!",
+                        None,
+                        "telegram",
+                        False,
+                    )
 
-                        return {"status": "rating_processed"}
+                return {"status": "rating_processed"}
 
             message_text = (
                 unicodedata.normalize("NFKD", message_text)
@@ -149,6 +145,10 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             image_id = data["image_id"]
             message_id = data["message_id"]
             caption = data["caption"] or ""
+
+            record_conversation_message(
+                message_id, user_id, "telegram", caption, True, "image"
+            )
 
             if user_id not in message_context:
                 message_context[user_id] = []

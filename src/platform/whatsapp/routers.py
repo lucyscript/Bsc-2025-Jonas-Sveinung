@@ -18,6 +18,7 @@ from src.core.processors.processors import (
     process_reaction,
     process_tracked_message,
 )
+from src.db.utils import record_conversation_message
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 
@@ -93,6 +94,15 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             message_text = message_text.replace(
                                 char, replacement
                             )
+
+                        record_conversation_message(
+                            message_id,
+                            user_id,
+                            "whatsapp",
+                            message_text,
+                            True,
+                            "text",
+                        )
 
                         logger.info(f"User: {message_text}")
                         context_info = message.get("context", {})
@@ -179,8 +189,8 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             if item_id and item_id.startswith("rating_"):
                                 rating_value = item_id.replace("rating_", "")
                                 message_context[user_id].append(
-                                    f"User rated with \
-                                    '{rating_value}' ({item_title})\n"
+                                    "User rated with "
+                                    f"'{rating_value}' ({item_title})\n"
                                 )
 
                                 original_message_id = message.get(
@@ -190,13 +200,10 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                                     original_message_id
                                     in message_id_to_bot_message
                                 ):
-                                    original_text = message_id_to_bot_message[
-                                        original_message_id
-                                    ]
                                     background_tasks.add_task(
                                         process_rating,
                                         rating_value,
-                                        original_text,
+                                        original_message_id,
                                     )
 
                                     background_tasks.add_task(
@@ -219,19 +226,34 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                             f"on message '{id_reacted_to}'\n"
                         )
                         if emoji == "👍" or emoji == "👎":
-                            original_text = message_id_to_bot_message.get(
-                                id_reacted_to, ""
-                            )
                             background_tasks.add_task(
                                 process_reaction,
                                 emoji,
-                                original_text,
+                                id_reacted_to,
+                            )
+                            background_tasks.add_task(
+                                process_tracked_message,
+                                user_id,
+                                phone_number,
+                                message_id,
+                                f"Thanks for your {emoji} reaction!",
+                                None,
+                                "whatsapp",
+                                False,
                             )
 
                     elif message_type == "image":
                         image_data = message.get("image", {})
                         image_id = image_data.get("id")
                         caption = image_data.get("caption", "")
+                        record_conversation_message(
+                            message_id,
+                            user_id,
+                            "whatsapp",
+                            caption,
+                            True,
+                            "image",
+                        )
                         if image_id:
                             background_tasks.add_task(
                                 process_image_response,
