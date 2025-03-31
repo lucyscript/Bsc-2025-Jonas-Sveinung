@@ -8,7 +8,7 @@ import logging
 
 from fastapi import FastAPI
 
-from src.db.routers import router as db_router
+from src.db.utils import connect, create_tables
 from src.platform.telegram.routers import router as telegram_router
 from src.platform.whatsapp.routers import router as whatsapp_router
 
@@ -18,7 +18,17 @@ logging.basicConfig(level=logging.INFO)
 
 app.include_router(whatsapp_router)
 app.include_router(telegram_router)
-app.include_router(db_router)
+
+
+@app.on_event("startup")
+async def startup_db_client():
+    """Initializes the database connection and creates tables."""
+    try:
+        conn = connect()
+        create_tables(conn)
+        conn.close()
+    except Exception as e:
+        logging.error(f"Failed to initialize database: {e}")
 
 
 @app.get("/")

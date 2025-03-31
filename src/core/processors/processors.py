@@ -12,6 +12,7 @@ from src.core.handlers.handlers import (
     handle_rating,
     handle_reaction,
 )
+from src.db.utils import record_conversation_message
 from src.platform.telegram.utils import process_telegram_message
 from src.platform.whatsapp.utils import process_whatsapp_message
 
@@ -181,14 +182,14 @@ async def process_image_response(
 
 async def process_rating(
     rating: str,
-    claim_text: str,
+    message_id: Optional[str] = None,
 ):
     """Process user numerical ratings (1-6) for messages."""
     try:
-        success = await handle_rating(rating, claim_text)
+        success = await handle_rating(rating, message_id)
         if not success:
             logger.warning(
-                f"Failed to process rating for user: {rating} on {claim_text}"
+                f"Failed to process rating for user: {rating} on {message_id}"
             )
     except Exception as e:
         logger.error(f"Error in rating processing: {e}")
@@ -196,15 +197,13 @@ async def process_rating(
 
 async def process_reaction(
     emoji: str,
-    claim_text: str,
+    message_id: str,
 ):
     """Process user reactions (emoji) to messages."""
     try:
-        success = await handle_reaction(emoji, claim_text)
+        success = await handle_reaction(emoji, message_id)
         if not success:
-            logger.warning(
-                f"Failed to process reaction for user: {emoji} on {claim_text}"
-            )
+            logger.warning(f"Failed to process reaction for user {message_id}")
     except Exception as e:
         logger.error(f"Error in reaction processing: {e}")
 
@@ -240,6 +239,9 @@ async def process_tracked_message(
             if sent_message and "messages" in sent_message:
                 bot_message_id = sent_message["messages"][0]["id"]
                 message_id_to_bot_message[bot_message_id] = response
+                record_conversation_message(
+                    bot_message_id, user_id, platform, response, False, "text"
+                )
         elif platform == "telegram":
             sent_message = await process_telegram_message(
                 phone_number, message_id, response, buttons, add_rating
@@ -252,6 +254,9 @@ async def process_tracked_message(
             ):
                 bot_message_id = str(sent_message["result"]["message_id"])
                 message_id_to_bot_message[bot_message_id] = response
+                record_conversation_message(
+                    bot_message_id, user_id, platform, response, False, "text"
+                )
     except Exception as e:
         logger.error(f"Error sending message: {e}")
         raise
