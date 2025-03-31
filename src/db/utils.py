@@ -59,8 +59,7 @@ def create_tables(conn):
                     message_id VARCHAR(255) NOT NULL 
                         REFERENCES messages(message_id),
                     rating INT,
-                    emoji VARCHAR(10),
-                    intent VARCHAR(50)
+                    emoji VARCHAR(10)
                 );
                 """
             )
