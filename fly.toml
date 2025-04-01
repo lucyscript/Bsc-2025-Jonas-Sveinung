@@ -12,7 +12,7 @@ primary_region = 'ams'
   internal_port = 8085
   force_https = true
   auto_stop_machines = 'stop'
-  auto_start_machines = true
+  auto_start_machines = false
   min_machines_running = 0
   processes = ['app']
 
@@ -20,7 +20,3 @@ primary_region = 'ams'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
-
-[mounts]
-source = "whatsapp_bot_data"
-destination = "/app/data"
