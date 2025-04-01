@@ -9,7 +9,7 @@ primary_region = 'ams'
 [build]
 
 [http_service]
-  internal_port = 8080
+  internal_port = 8085
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
@@ -20,3 +20,7 @@ primary_region = 'ams'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
+
+[mounts]
+source = "whatsapp_bot_data"
+destination = "/app/data"

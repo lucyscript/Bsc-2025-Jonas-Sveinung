@@ -10,4 +10,3 @@ toml
 pre-commit==3.8.0
 fastapi[standard]
 uvicorn
-psycopg2-binary
