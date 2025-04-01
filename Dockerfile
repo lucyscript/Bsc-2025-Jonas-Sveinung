@@ -15,9 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY ./src ./src
 
-# Copy data directory and ensure it's writable
-COPY ./data ./data
-RUN chmod -R 777 ./data
+# Create a volume for persistent data storage
+VOLUME ["/app/data"]
+
+# Make sure the data directory exists and copy initial README
+COPY ./data/README.md /app/data/
 
 EXPOSE 8085
 
