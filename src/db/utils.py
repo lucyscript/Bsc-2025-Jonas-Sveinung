@@ -16,6 +16,8 @@ def connect():
         logging.info(f"Connecting to SQLite database at {db_path}...")
         conn = sqlite3.connect(db_path)
         logging.info("Connected to the SQLite database.")
+        create_feedback_table(conn)
+        logging.info("Created feedback table.")
         return conn
     except (sqlite3.DatabaseError, Exception) as error:
         logging.error(f"Error connecting to the SQLite database: {error}")
@@ -47,7 +49,6 @@ def create_feedback_table(conn):
 def insert_feedback(conn, emoji, message_text, timestamp):
     """Inserts feedback into the feedback table."""
     logging.info("Inserting feedback...")
-    create_feedback_table(conn)
     try:
         cur = conn.cursor()
         cur.execute(
