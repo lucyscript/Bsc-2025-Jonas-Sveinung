@@ -1,8 +1,7 @@
-"""Utilities for PostgreSQL database connection."""
+"""Utilities for SQLite database connection."""
 
 import logging
-
-import psycopg2
+import sqlite3
 
 from src.db.config import load_config
 
@@ -12,84 +11,83 @@ logging.basicConfig(
 
 
 def connect():
-    """Connect to the PostgreSQL database server."""
+    """Connect to the SQLite database."""
     try:
         config = load_config()
-
-        conn = psycopg2.connect(**config)
-        logging.info("Connected to the PostgreSQL server.")
+        conn = sqlite3.connect(config["database"])
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.row_factory = sqlite3.Row
+        logging.info("Connected to the SQLite database.")
         return conn
-    except (psycopg2.DatabaseError, Exception) as error:
-        logging.error(f"Error connecting to the PostgreSQL server: {error}")
+    except (sqlite3.Error, Exception) as error:
+        logging.error(f"Error connecting to the SQLite database: {error}")
         raise
 
 
 def create_tables(conn):
     """Creates all database tables if they don't exist."""
     try:
-        with conn.cursor() as cur:
-            cur.execute(
+        with conn:
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS conversations (
-                    conversation_id SERIAL PRIMARY KEY,
-                    user_id VARCHAR(255) NOT NULL,
-                    platform VARCHAR(50)
+                    conversation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    platform TEXT
                 );
                 """
             )
 
-            cur.execute(
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS messages (
-                    message_id VARCHAR(255) PRIMARY KEY,
-                    conversation_id INT NOT NULL 
-                        REFERENCES conversations(conversation_id),
-                    sender VARCHAR(50) NOT NULL,
+                    message_id TEXT PRIMARY KEY,
+                    conversation_id INTEGER NOT NULL,
+                    sender TEXT NOT NULL,
                     content TEXT NOT NULL,
-                    message_type VARCHAR(50) DEFAULT 'text',
-                    sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    message_type TEXT DEFAULT 'text',
+                    sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (conversation_id) 
+                        REFERENCES conversations(conversation_id)
                 );
                 """
             )
 
-            cur.execute(
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS feedback (
-                    feedback_id SERIAL PRIMARY KEY,
-                    message_id VARCHAR(255) NOT NULL 
-                        REFERENCES messages(message_id),
-                    rating INT,
-                    emoji VARCHAR(10)
+                    feedback_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_id TEXT NOT NULL,
+                    rating INTEGER,
+                    emoji TEXT,
+                    FOREIGN KEY (message_id) 
+                        REFERENCES messages(message_id)
                 );
                 """
             )
 
-            conn.commit()
         logging.info("Database tables created successfully.")
     except Exception as e:
         logging.error(f"Error creating database tables: {e}")
-        conn.rollback()
         raise
 
 
 def create_conversation(conn, user_id, platform=None):
     """Creates a new conversation and returns the conversation_id."""
     try:
-        with conn.cursor() as cur:
-            cur.execute(
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(
                 """
                 INSERT INTO conversations (user_id, platform)
-                VALUES (%s, %s)
-                RETURNING conversation_id;
+                VALUES (?, ?);
                 """,
                 (user_id, platform),
             )
-            conversation_id = cur.fetchone()[0]
-            conn.commit()
+            conversation_id = cursor.lastrowid
         return conversation_id
     except Exception as e:
         logging.error(f"Error creating conversation: {e}")
-        conn.rollback()
         raise
 
 
@@ -98,22 +96,18 @@ def add_message(
 ):
     """Adds a message to a conversation and returns the message_id."""
     try:
-        with conn.cursor() as cur:
-            cur.execute(
+        with conn:
+            conn.execute(
                 """
                 INSERT INTO messages 
                     (message_id, conversation_id, sender, content, message_type)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING message_id;
+                VALUES (?, ?, ?, ?, ?);
                 """,
                 (message_id, conversation_id, sender, content, message_type),
             )
-            message_id = cur.fetchone()[0]
-            conn.commit()
         return message_id
     except Exception as e:
         logging.error(f"Error adding message: {e}")
-        conn.rollback()
         raise
 
 
@@ -127,22 +121,20 @@ def add_feedback(message_id, rating=None, emoji=None):
     """
     try:
         conn = connect()
-        with conn.cursor() as cur:
-            cur.execute(
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(
                 """
                 INSERT INTO feedback 
                 (message_id, rating, emoji)
-                VALUES (%s, %s, %s)
-                RETURNING feedback_id;
+                VALUES (?, ?, ?);
                 """,
                 (message_id, rating, emoji),
             )
-            feedback_id = cur.fetchone()[0]
-            conn.commit()
+            feedback_id = cursor.lastrowid
         return feedback_id
     except Exception as e:
         logging.error(f"Error adding feedback: {e}")
-        conn.rollback()
         raise
 
 
@@ -172,18 +164,18 @@ def record_conversation_message(
     """
     try:
         conn = connect()
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT conversation_id 
-                FROM conversations
-                WHERE user_id = %s AND platform = %s
-                ORDER BY conversation_id DESC
-                LIMIT 1;
-                """,
-                (user_id, platform),
-            )
-            row = cur.fetchone()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT conversation_id 
+            FROM conversations
+            WHERE user_id = ? AND platform = ?
+            ORDER BY conversation_id DESC
+            LIMIT 1;
+            """,
+            (user_id, platform),
+        )
+        row = cursor.fetchone()
 
         if row:
             conversation_id = row[0]

@@ -1,24 +1,15 @@
-"""Config file for database connection."""
+"""Config file for SQLite database connection."""
 
 import os
-from urllib.parse import urlparse
 
 
 def load_config():
-    """Loads database configuration from environment variables."""
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise ValueError("DATABASE_URL environment variable not set.")
+    """Loads SQLite database configuration with a fixed database path."""
+    db_path = os.path.join("data", "factibot.db")
 
-    result = urlparse(database_url)
-    config = {
-        "host": result.hostname,
-        "database": result.path[1:],
-        "user": result.username,
-        "password": result.password,
-        "port": result.port,
-    }
-    return config
+    os.makedirs("data", exist_ok=True)
+
+    return {"database": db_path}
 
 
 if __name__ == "__main__":
