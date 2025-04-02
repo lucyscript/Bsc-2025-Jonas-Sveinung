@@ -12,14 +12,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY ./src ./src
 
-# Create a volume for persistent data storage
 VOLUME ["/app/data"]
-
-# Make sure the data directory exists and copy initial README
-COPY ./data/README.md /app/data/
 
 EXPOSE 8085
 
