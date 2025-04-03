@@ -296,23 +296,23 @@ async def get_telegram_image_url(file_id: str) -> str:
         raise
 
 
-def extract_message_data(update: Dict[str, Any]) -> Dict[str, Optional[str]]:
+def extract_message_data(update: Dict[str, Any]) -> Dict[str, str]:
     """Extract relevant data from a Telegram update.
 
     Args:
         update: The Telegram update object
 
     Returns:
-        Dict containing extracted message data
+        Dict containing extracted message data with empty strings when missing
     """
-    result: Dict[str, Optional[str]] = {
-        "message_type": None,
-        "chat_id": None,
-        "message_id": None,
-        "text": None,
-        "callback_data": None,
-        "image_id": None,
-        "caption": None,
+    result: Dict[str, str] = {
+        "message_type": "",
+        "chat_id": "",
+        "message_id": "",
+        "text": "",
+        "callback_data": "",
+        "image_id": "",
+        "caption": "",
     }
 
     if "message" in update:
