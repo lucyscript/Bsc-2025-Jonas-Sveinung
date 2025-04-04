@@ -98,7 +98,7 @@ async def process_fact_check_response(
         if isinstance(result, tuple) and len(result) == 2:
             prompt, evidence_data = result
 
-            if evidence_data.strip() == "[]":
+            if evidence_data == "":
                 suggestion_data: Tuple[
                     List[Dict[str, str]], Dict[str, str], str
                 ] = await handle_claim_suggestions(message_text, context)

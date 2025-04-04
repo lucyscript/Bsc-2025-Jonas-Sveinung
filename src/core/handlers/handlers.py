@@ -52,7 +52,7 @@ async def handle_message_with_intent(
             )
             prompt, evidence_data = fact_check_result1
 
-            if evidence_data.strip() == "[]":
+            if evidence_data == "":
                 suggestion_data: Tuple[
                     List[Dict[str, str]], Dict[str, str], str
                 ] = await handle_claim_suggestions(message_text, context)
@@ -75,7 +75,7 @@ async def handle_message_with_intent(
                     )
                 )
                 prompt, evidence_data = fact_check_result2
-                if evidence_data.strip() == "[]":
+                if evidence_data == "":
                     suggestion_data2: Tuple[
                         List[Dict[str, str]], Dict[str, str], str
                     ] = await handle_claim_suggestions(message_text, context)
@@ -116,7 +116,7 @@ async def handle_message_with_intent(
                 )
                 prompt, evidence_data = fact_check_result
 
-                if evidence_data.strip() == "[]":
+                if evidence_data == "":
                     suggestion_data3: Tuple[
                         List[Dict[str, str]], Dict[str, str], str
                     ] = await handle_claim_suggestions(message_text, context)
@@ -280,7 +280,6 @@ async def handle_fact_check_intent(
         for url in urls:
             fact_results = await fact_check(url)
             evidence = clean_facts(fact_results)
-
             final_evidence_text += f"{evidence}\n"
 
     if claims:
@@ -307,6 +306,13 @@ async def handle_fact_check_intent(
 
                 if not isinstance(result, BaseException):
                     evidence = clean_facts(result)
+                    cleaned_text = final_evidence_text.replace("[]", "").strip()
+                    if cleaned_text and evidence == []:
+                        final_evidence_text += (
+                            "{{'error': 'NO EVIDENCE FOUND FOR"
+                            f" {claims[i]}. IMPORTANT: DO NOT PROVIDE ANY "
+                            "ANALYSIS OR ELABORATION ON THE CLAIM.'}}"
+                        )
                     final_evidence_text += f"{evidence}\n"
 
         except Exception as e:
@@ -319,7 +325,8 @@ async def handle_fact_check_intent(
         context=context,
     )
 
-    return fact_check_prompt, final_evidence_text
+    cleaned_text = final_evidence_text.replace("[]", "").strip()
+    return fact_check_prompt, cleaned_text
 
 
 async def handle_general_intent(message_text: str, context: str) -> str:
